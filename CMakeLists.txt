@@ -36,14 +36,13 @@ include_directories(${RGB_LED_MATRIX_INCLUDE_DIR})
 include_directories(${CMAKE_SOURCE_DIR}/include)
 
 # Source files
-set(SOURCES
-    src/camera_to_matrix.cpp
-)
+set(CAMERA_SOURCES src/camera_to_matrix.cpp)
+set(RPICAM_SOURCES src/rpicam_to_matrix.cpp)
 
-# Executable
-add_executable(camera_to_matrix ${SOURCES})
+# Executable: camera_to_matrix (direct libcamera)
+add_executable(camera_to_matrix ${CAMERA_SOURCES})
 
-# Link libraries
+# Link libraries for camera_to_matrix
 target_link_libraries(camera_to_matrix
     ${RGB_LED_MATRIX_LIB}
     pthread
@@ -70,3 +69,13 @@ if(LIBCAMERA_APPS_FOUND)
     target_link_libraries(camera_to_matrix ${LIBCAMERA_APPS_LIBRARIES})
     message(STATUS "Found libcamera-apps")
 endif()
+
+# Executable: rpicam_to_matrix (reads from stdin)
+add_executable(rpicam_to_matrix ${RPICAM_SOURCES})
+
+# Link libraries for rpicam_to_matrix
+target_link_libraries(rpicam_to_matrix
+    ${RGB_LED_MATRIX_LIB}
+    pthread
+    m
+)
