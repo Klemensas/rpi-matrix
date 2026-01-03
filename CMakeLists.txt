@@ -1,0 +1,72 @@
+cmake_minimum_required(VERSION 3.10)
+project(rpi-matrix VERSION 1.0.0 LANGUAGES CXX)
+
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
+# Find rpi-rgb-led-matrix library
+# Check if it's in the parent directory or installed system-wide
+if(EXISTS "${CMAKE_SOURCE_DIR}/rpi-rgb-led-matrix")
+    set(RGB_LED_MATRIX_DIR "${CMAKE_SOURCE_DIR}/rpi-rgb-led-matrix")
+    set(RGB_LED_MATRIX_INCLUDE_DIR "${RGB_LED_MATRIX_DIR}/include")
+    set(RGB_LED_MATRIX_LIB "${RGB_LED_MATRIX_DIR}/lib/librgbmatrix.a")
+else()
+    # Try system installation
+    find_path(RGB_LED_MATRIX_INCLUDE_DIR
+        NAMES led-matrix.h
+        PATHS /usr/local/include
+    )
+    find_library(RGB_LED_MATRIX_LIB
+        NAMES rgbmatrix
+        PATHS /usr/local/lib
+    )
+endif()
+
+if(NOT RGB_LED_MATRIX_INCLUDE_DIR OR NOT RGB_LED_MATRIX_LIB)
+    message(FATAL_ERROR "rpi-rgb-led-matrix not found. Please build it first:
+    cd rpi-rgb-led-matrix && make")
+endif()
+
+message(STATUS "Found rpi-rgb-led-matrix:")
+message(STATUS "  Include: ${RGB_LED_MATRIX_INCLUDE_DIR}")
+message(STATUS "  Library: ${RGB_LED_MATRIX_LIB}")
+
+# Include directories
+include_directories(${RGB_LED_MATRIX_INCLUDE_DIR})
+include_directories(${CMAKE_SOURCE_DIR}/include)
+
+# Source files
+set(SOURCES
+    src/camera_to_matrix.cpp
+)
+
+# Executable
+add_executable(camera_to_matrix ${SOURCES})
+
+# Link libraries
+target_link_libraries(camera_to_matrix
+    ${RGB_LED_MATRIX_LIB}
+    pthread
+    m
+)
+
+# Raspberry Pi camera libraries (libcamera) - REQUIRED
+find_package(PkgConfig REQUIRED)
+pkg_check_modules(LIBCAMERA REQUIRED libcamera)
+
+if(NOT LIBCAMERA_FOUND)
+    message(FATAL_ERROR "libcamera not found. Install with: sudo apt install libcamera-dev")
+endif()
+
+target_include_directories(camera_to_matrix PRIVATE ${LIBCAMERA_INCLUDE_DIRS})
+target_link_libraries(camera_to_matrix ${LIBCAMERA_LIBRARIES})
+message(STATUS "Found libcamera:")
+message(STATUS "  Include: ${LIBCAMERA_INCLUDE_DIRS}")
+message(STATUS "  Libraries: ${LIBCAMERA_LIBRARIES}")
+
+# libcamera-apps is optional but recommended
+pkg_check_modules(LIBCAMERA_APPS libcamera-apps)
+if(LIBCAMERA_APPS_FOUND)
+    target_link_libraries(camera_to_matrix ${LIBCAMERA_APPS_LIBRARIES})
+    message(STATUS "Found libcamera-apps")
+endif()
