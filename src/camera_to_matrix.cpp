@@ -34,8 +34,6 @@ public:
           chain_length_(chain_length), parallel_(parallel),
           hardware_mapping_(hardware_mapping) {
         setupMatrix();
-        // Setup camera manager while still root (needed for DMA buffers)
-        // But don't acquire camera yet - that happens in run()
         setupCameraManager();
     }
 
@@ -58,26 +56,15 @@ public:
     }
 
     void run() {
-        // Acquire camera while still root (needed for DMA buffer access)
         acquireCamera();
         
-        // Now drop privileges after camera is acquired
-        uid_t current_uid = geteuid();
-        if (current_uid == 0) {
-            std::cout << "Dropping privileges after camera acquisition..." << std::endl;
+        if (geteuid() == 0) {
             const char* sudo_user = std::getenv("SUDO_USER");
             const char* target_user = sudo_user ? sudo_user : "pi";
             struct passwd *pw = getpwnam(target_user);
             if (pw) {
-                if (setgid(pw->pw_gid) != 0 || setuid(pw->pw_uid) != 0) {
-                    std::cerr << "Failed to drop privileges to " << target_user << std::endl;
-                    return;
-                }
-                std::cout << "Successfully dropped to " << target_user 
-                          << " (UID: " << geteuid() << ", GID: " << getegid() << ")" << std::endl;
-            } else {
-                std::cerr << "User " << target_user << " not found" << std::endl;
-                return;
+                setgid(pw->pw_gid);
+                setuid(pw->pw_uid);
             }
         }
         
@@ -98,7 +85,7 @@ public:
         streamConfig.size.height = height_;
         streamConfig.pixelFormat = formats::RGB888;
         streamConfig.bufferCount = 2;
-
+        
         config->validate();
         if (camera_->configure(config.get()) < 0) {
             std::cerr << "Failed to configure camera" << std::endl;
@@ -197,8 +184,6 @@ public:
 
 private:
     void setupMatrix() {
-        std::cerr << "=== Setting up matrix (UID: " << geteuid() << ") ===" << std::endl;
-        
         RGBMatrix::Options options;
         options.rows = rows_;
         options.cols = cols_;
@@ -208,83 +193,52 @@ private:
         options.brightness = 50;
         
         RuntimeOptions runtime_options;
-        // Don't let RGB matrix library drop privileges - we'll do it manually
-        // This gives us more control over when and to whom we drop
         runtime_options.drop_privileges = 0;
         
-        std::cerr << "Creating RGB matrix..." << std::endl;
         matrix_ = RGBMatrix::CreateFromOptions(options, runtime_options);
-        if (!matrix_) {
-            std::cerr << "ERROR: Failed to create RGB matrix" << std::endl;
-        } else {
+        if (matrix_) {
             canvas_ = matrix_->CreateFrameCanvas();
-            std::cerr << "Matrix created successfully" << std::endl;
-            
-            // Don't drop privileges here - wait until after camera is acquired
-            std::cerr << "Matrix created (UID: " << geteuid() << ")" << std::endl;
         }
     }
 
     void setupCameraManager() {
-        // Setup camera manager while still root (needed for DMA buffer access)
-        std::cerr << "Setting up camera manager (UID: " << geteuid() << ")..." << std::endl;
         camera_manager_ = std::make_unique<CameraManager>();
-        if (camera_manager_->start()) {
-            std::cerr << "Failed to start camera manager" << std::endl;
-            return;
-        }
-        std::cerr << "Camera manager started successfully" << std::endl;
+        camera_manager_->start();
     }
 
     void acquireCamera() {
-        std::cerr << "Acquiring camera (UID: " << geteuid() << ")..." << std::endl;
-        
-        if (!camera_manager_) {
-            std::cerr << "Camera manager not initialized" << std::endl;
-            return;
-        }
+        if (!camera_manager_) return;
 
         std::vector<std::shared_ptr<Camera>> cameras = camera_manager_->cameras();
-        if (cameras.empty()) {
-            std::cerr << "No cameras found" << std::endl;
-            return;
-        }
+        if (cameras.empty()) return;
 
         camera_ = cameras[0];
         if (camera_->acquire()) {
-            std::cerr << "Failed to acquire camera" << std::endl;
             camera_.reset();
-        } else {
-            std::cerr << "Camera acquired successfully" << std::endl;
         }
     }
 
     void displayFrame(uint8_t *data, int width, int height) {
         if (!canvas_) return;
 
-        // Get matrix dimensions
         int matrix_width = canvas_->width();
         int matrix_height = canvas_->height();
 
-        // Resize and convert frame to matrix size
         for (int y = 0; y < matrix_height; y++) {
             for (int x = 0; x < matrix_width; x++) {
-                // Scale coordinates
                 int src_x = (x * width) / matrix_width;
                 int src_y = (y * height) / matrix_height;
                 
-                // Get pixel from camera frame (RGB888 format)
                 int src_idx = (src_y * width + src_x) * 3;
                 uint8_t r = data[src_idx];
                 uint8_t g = data[src_idx + 1];
                 uint8_t b = data[src_idx + 2];
 
-                // Set pixel on matrix
-                canvas_->SetPixel(x, y, r, g, b);
+                // Camera outputs BGR, swap to RGB
+                canvas_->SetPixel(x, y, b, g, r);
             }
         }
 
-        // Swap canvas on VSync
         canvas_ = matrix_->SwapOnVSync(canvas_);
     }
 
