@@ -67,11 +67,6 @@ public:
 
         std::cerr << "Matrix initialized successfully!" << std::endl;
         std::cerr << "Matrix size: " << matrix_width << "x" << matrix_height << std::endl;
-        
-        // Display a test pattern to verify matrix is working
-        displayTestPattern();
-        std::cerr << "Test pattern displayed - matrix is working!" << std::endl;
-        
         std::cerr << "Reading from stdin..." << std::endl;
         std::cerr << "Input resolution: " << input_width << "x" << input_height << std::endl;
         std::cerr << "Frame size: " << (input_width * input_height * 3) << " bytes" << std::endl;
@@ -151,57 +146,6 @@ private:
         if (matrix_) {
             canvas_ = matrix_->CreateFrameCanvas();
         }
-    }
-
-    void displayTestPattern() {
-        if (!canvas_) {
-            std::cerr << "ERROR: Canvas is null in displayTestPattern!" << std::endl;
-            return;
-        }
-        if (!matrix_) {
-            std::cerr << "ERROR: Matrix is null in displayTestPattern!" << std::endl;
-            return;
-        }
-
-        int matrix_width = canvas_->width();
-        int matrix_height = canvas_->height();
-
-        std::cerr << "Rendering test pattern on " << matrix_width << "x" << matrix_height << " matrix..." << std::endl;
-
-        // Display a bright, visible test pattern (white border, colored quadrants)
-        for (int y = 0; y < matrix_height; y++) {
-            for (int x = 0; x < matrix_width; x++) {
-                uint8_t r = 0, g = 0, b = 0;
-                
-                // White border
-                if (x == 0 || x == matrix_width-1 || y == 0 || y == matrix_height-1) {
-                    r = g = b = 255;
-                }
-                // Red quadrant (top-left)
-                else if (x < matrix_width/2 && y < matrix_height/2) {
-                    r = 255; g = 0; b = 0;
-                }
-                // Green quadrant (top-right)
-                else if (x >= matrix_width/2 && y < matrix_height/2) {
-                    r = 0; g = 255; b = 0;
-                }
-                // Blue quadrant (bottom-left)
-                else if (x < matrix_width/2 && y >= matrix_height/2) {
-                    r = 0; g = 0; b = 255;
-                }
-                // Yellow quadrant (bottom-right)
-                else {
-                    r = 255; g = 255; b = 0;
-                }
-                
-                canvas_->SetPixel(x, y, r, g, b);
-            }
-        }
-        
-        std::cerr << "Swapping canvas..." << std::endl;
-        canvas_ = matrix_->SwapOnVSync(canvas_);
-        std::cerr << "Test pattern swapped, showing for 2 seconds..." << std::endl;
-        usleep(2000000); // Show pattern for 2 seconds
     }
 
     void displayFrame(uint8_t *data, int width, int height) {
