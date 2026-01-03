@@ -191,9 +191,11 @@ private:
         options.parallel = parallel_;
         options.hardware_mapping = hardware_mapping_.c_str();
         options.brightness = 50;
+        options.disable_hardware_pulsing = true;
         
         RuntimeOptions runtime_options;
         runtime_options.drop_privileges = 0;
+        runtime_options.gpio_slowdown = 4;
         
         matrix_ = RGBMatrix::CreateFromOptions(options, runtime_options);
         if (matrix_) {
