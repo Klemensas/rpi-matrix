@@ -74,6 +74,16 @@ if(LIBCAMERA_APPS_FOUND)
     message(STATUS "Found libcamera-apps")
 endif()
 
+# OpenCV for image processing and person detection
+find_package(OpenCV REQUIRED)
+if(OpenCV_FOUND)
+    message(STATUS "Found OpenCV: ${OpenCV_VERSION}")
+    target_include_directories(camera_to_matrix PRIVATE ${OpenCV_INCLUDE_DIRS})
+    target_link_libraries(camera_to_matrix ${OpenCV_LIBS})
+else()
+    message(FATAL_ERROR "OpenCV not found. Install with: sudo apt install libopencv-dev")
+endif()
+
 # Executable: rpicam_to_matrix (reads from stdin)
 add_executable(rpicam_to_matrix ${RPICAM_SOURCES})
 

@@ -1,5 +1,8 @@
 #include "components/camera_capture.h"
 #include "components/matrix_display.h"
+#include <opencv2/opencv.hpp>
+#include <opencv2/imgproc.hpp>
+#include <opencv2/video/background_segm.hpp>
 #include <iostream>
 #include <csignal>
 #include <cstring>
@@ -10,6 +13,7 @@
 #include <fcntl.h>
 #include <sys/select.h>
 #include <termios.h>
+#include <vector>
 
 volatile bool running = true;
 
@@ -28,7 +32,10 @@ public:
           matrix_(rows, cols, chain_length, parallel, hardware_mapping),
           display_mode_(1),  // Start with mode 1 (default camera)
           width_(width),
-          height_(height) {
+          height_(height),
+          background_subtractor_(cv::createBackgroundSubtractorMOG2(500, 16, true)) {
+        // Initialize silhouette processing buffers
+        silhouette_frame_ = cv::Mat::zeros(height, width, CV_8UC3);
     }
 
     void run() {
@@ -93,18 +100,41 @@ private:
         }
     }
 
-    // Transformed frame processing - implement your transformation here
+    // Transformed frame processing - detect people and draw silhouettes
     void processTransformedFrame(uint8_t *data, int width, int height) {
-        // TODO: Add your transformation logic here
-        // For now, just pass through (you'll replace this)
+        // Convert raw BGR888 data to OpenCV Mat
+        // Note: Camera outputs BGR format (despite being called RGB888)
+        cv::Mat frame_bgr(height, width, CV_8UC3, data);
         
-        // Example:
-        // 1. Convert to OpenCV Mat if needed
-        // 2. Apply your transformation
-        // 3. Convert back to RGB888
-        // 4. Display on matrix
+        // Apply background subtraction to detect moving objects (people)
+        cv::Mat fg_mask;
+        background_subtractor_->apply(frame_bgr, fg_mask);
         
-        matrix_.displayFrame(data, width, height);
+        // Find contours of detected objects
+        std::vector<std::vector<cv::Point>> contours;
+        std::vector<cv::Vec4i> hierarchy;
+        cv::findContours(fg_mask, contours, hierarchy, cv::RETR_EXTERNAL, cv::CHAIN_APPROX_SIMPLE);
+        
+        // Create black silhouette frame
+        silhouette_frame_ = cv::Mat::zeros(height, width, CV_8UC3);
+        
+        // Filter and draw silhouettes (only large contours - likely people)
+        const int min_contour_area = 1000;  // Minimum area to consider as a person
+        for (const auto& contour : contours) {
+            double area = cv::contourArea(contour);
+            if (area > min_contour_area) {
+                // Draw filled white silhouette
+                cv::drawContours(silhouette_frame_, std::vector<std::vector<cv::Point>>{contour}, 
+                                -1, cv::Scalar(255, 255, 255), cv::FILLED);
+            }
+        }
+        
+        // Convert back to RGB888 for matrix display
+        cv::Mat silhouette_rgb;
+        cv::cvtColor(silhouette_frame_, silhouette_rgb, cv::COLOR_BGR2RGB);
+        
+        // Display silhouette on matrix
+        matrix_.displayFrame(silhouette_rgb.data, width, height);
     }
 
     void setupKeyboardInput() {
@@ -159,6 +189,10 @@ private:
     int width_;
     int height_;
     struct termios original_termios_;  // For restoring terminal settings
+    
+    // Silhouette processing
+    cv::Ptr<cv::BackgroundSubtractor> background_subtractor_;
+    cv::Mat silhouette_frame_;
 };
 
 void printUsage(const char* program) {
