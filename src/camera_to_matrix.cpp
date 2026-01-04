@@ -25,16 +25,6 @@ public:
     }
 
     void run() {
-        if (!camera_.isReady()) {
-            std::cerr << "Camera initialization failed" << std::endl;
-            return;
-        }
-
-        if (!matrix_.isReady()) {
-            std::cerr << "Matrix initialization failed" << std::endl;
-            return;
-        }
-
         if (geteuid() == 0) {
             const char* sudo_user = std::getenv("SUDO_USER");
             const char* target_user = sudo_user ? sudo_user : "pi";
