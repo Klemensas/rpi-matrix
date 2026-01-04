@@ -6,6 +6,10 @@
 #include <cstdlib>
 #include <unistd.h>
 #include <pwd.h>
+#include <atomic>
+#include <fcntl.h>
+#include <sys/select.h>
+#include <termios.h>
 
 volatile bool running = true;
 
@@ -21,7 +25,10 @@ public:
                    int chain_length = 1, int parallel = 1,
                    const std::string& hardware_mapping = "regular")
         : camera_(width, height),
-          matrix_(rows, cols, chain_length, parallel, hardware_mapping) {
+          matrix_(rows, cols, chain_length, parallel, hardware_mapping),
+          display_mode_(1),  // Start with mode 1 (default camera)
+          width_(width),
+          height_(height) {
     }
 
     void run() {
@@ -43,36 +50,115 @@ public:
         // Start camera capture
         camera_.start();
 
+        // Set up keyboard input (non-blocking)
+        setupKeyboardInput();
+
         std::cout << "Camera started. Displaying on LED matrix..." << std::endl;
-        std::cout << "Press Ctrl+C to stop" << std::endl;
+        std::cout << "Display modes:" << std::endl;
+        std::cout << "  1 - Default camera (pass-through)" << std::endl;
+        std::cout << "  2 - Transformed camera" << std::endl;
+        std::cout << "Press 1 or 2 to switch modes, Ctrl+C to stop" << std::endl;
 
         // Keep running until interrupted
         while (running) {
+            checkKeyboardInput();
             usleep(10000); // 10ms sleep
         }
+
+        restoreKeyboardInput();
 
         camera_.stop();
     }
 
 private:
-    // Process frame - this is where you can add OpenCV/MediaPipe processing
+    // Process frame - routes to appropriate display mode
     void processFrame(uint8_t *data, int width, int height) {
-        // TODO: Add video processing here (OpenCV, MediaPipe, etc.)
-        // For now, just pass through to matrix
+        int mode = display_mode_.load();
         
-        // Example processing pipeline:
+        switch (mode) {
+            case 1:
+                // Mode 1: Default camera (pass-through)
+                matrix_.displayFrame(data, width, height);
+                break;
+                
+            case 2:
+                // Mode 2: Transformed camera
+                processTransformedFrame(data, width, height);
+                break;
+                
+            default:
+                // Fallback to default
+                matrix_.displayFrame(data, width, height);
+                break;
+        }
+    }
+
+    // Transformed frame processing - implement your transformation here
+    void processTransformedFrame(uint8_t *data, int width, int height) {
+        // TODO: Add your transformation logic here
+        // For now, just pass through (you'll replace this)
+        
+        // Example:
         // 1. Convert to OpenCV Mat if needed
-        // 2. Apply filters/effects
-        // 3. Run MediaPipe detection
-        // 4. Draw overlays
-        // 5. Convert back to RGB888
+        // 2. Apply your transformation
+        // 3. Convert back to RGB888
+        // 4. Display on matrix
         
-        // Display on matrix
         matrix_.displayFrame(data, width, height);
+    }
+
+    void setupKeyboardInput() {
+        // Save current terminal settings
+        tcgetattr(STDIN_FILENO, &original_termios_);
+        
+        // Set terminal to raw mode (non-canonical, no echo)
+        struct termios raw = original_termios_;
+        raw.c_lflag &= ~(ICANON | ECHO);
+        raw.c_cc[VMIN] = 0;  // Non-blocking read
+        raw.c_cc[VTIME] = 0;
+        tcsetattr(STDIN_FILENO, TCSANOW, &raw);
+        
+        // Set stdin to non-blocking
+        int flags = fcntl(STDIN_FILENO, F_GETFL, 0);
+        fcntl(STDIN_FILENO, F_SETFL, flags | O_NONBLOCK);
+    }
+
+    void restoreKeyboardInput() {
+        // Restore original terminal settings
+        tcsetattr(STDIN_FILENO, TCSANOW, &original_termios_);
+    }
+
+    void checkKeyboardInput() {
+        fd_set readfds;
+        struct timeval timeout;
+        
+        FD_ZERO(&readfds);
+        FD_SET(STDIN_FILENO, &readfds);
+        timeout.tv_sec = 0;
+        timeout.tv_usec = 0;
+        
+        if (select(STDIN_FILENO + 1, &readfds, nullptr, nullptr, &timeout) > 0) {
+            if (FD_ISSET(STDIN_FILENO, &readfds)) {
+                char key;
+                if (read(STDIN_FILENO, &key, 1) == 1) {
+                    if (key == '1') {
+                        display_mode_ = 1;
+                        std::cout << "Switched to mode 1: Default camera" << std::endl;
+                    } else if (key == '2') {
+                        display_mode_ = 2;
+                        std::cout << "Switched to mode 2: Transformed camera" << std::endl;
+                    }
+                }
+            }
+        }
     }
 
     CameraCapture camera_;
     MatrixDisplay matrix_;
+    std::atomic<int> display_mode_;  // Thread-safe mode variable
+    int width_;
+    int height_;
+    struct termios original_termios_;  // For restoring terminal settings
 };
 
 void printUsage(const char* program) {
