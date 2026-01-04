@@ -36,7 +36,11 @@ include_directories(${RGB_LED_MATRIX_INCLUDE_DIR})
 include_directories(${CMAKE_SOURCE_DIR}/include)
 
 # Source files
-set(CAMERA_SOURCES src/camera_to_matrix.cpp)
+set(CAMERA_SOURCES 
+    src/camera_to_matrix.cpp
+    src/components/camera_capture.cpp
+    src/components/matrix_display.cpp
+)
 set(RPICAM_SOURCES src/rpicam_to_matrix.cpp)
 
 # Executable: camera_to_matrix (direct libcamera)

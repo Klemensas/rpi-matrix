@@ -1,22 +1,11 @@
+#include "components/camera_capture.h"
+#include "components/matrix_display.h"
 #include <iostream>
-#include <memory>
 #include <csignal>
 #include <cstring>
 #include <cstdlib>
-#include <sys/mman.h>
 #include <unistd.h>
 #include <pwd.h>
-#include <libcamera/libcamera.h>
-#include <libcamera/camera_manager.h>
-#include <libcamera/camera.h>
-#include <libcamera/framebuffer_allocator.h>
-#include <libcamera/request.h>
-#include <led-matrix.h>
-
-using namespace libcamera;
-using rgb_matrix::RGBMatrix;
-using rgb_matrix::RuntimeOptions;
-using rgb_matrix::FrameCanvas;
 
 volatile bool running = true;
 
@@ -25,23 +14,27 @@ void signalHandler(int signum) {
     running = false;
 }
 
+// Main orchestrator class
 class CameraToMatrix {
 public:
     CameraToMatrix(int width, int height, int rows, int cols, 
                    int chain_length = 1, int parallel = 1,
                    const std::string& hardware_mapping = "regular")
-        : width_(width), height_(height), rows_(rows), cols_(cols),
-          chain_length_(chain_length), parallel_(parallel),
-          hardware_mapping_(hardware_mapping) {
-        setupMatrix();
-        setupCameraManager();
-    }
-
-    ~CameraToMatrix() {
-        cleanup();
+        : camera_(width, height),
+          matrix_(rows, cols, chain_length, parallel, hardware_mapping) {
     }
 
     void run() {
+        if (!camera_.isReady()) {
+            std::cerr << "Camera initialization failed" << std::endl;
+            return;
+        }
+
+        if (!matrix_.isReady()) {
+            std::cerr << "Matrix initialization failed" << std::endl;
+            return;
+        }
+
         if (geteuid() == 0) {
             const char* sudo_user = std::getenv("SUDO_USER");
             const char* target_user = sudo_user ? sudo_user : "pi";
@@ -52,200 +45,44 @@ public:
             }
         }
 
-        // Configure camera stream
-        std::unique_ptr<CameraConfiguration> config = camera_->generateConfiguration({StreamRole::Viewfinder});
-        if (!config) {
-            std::cerr << "Failed to generate camera configuration" << std::endl;
-            return;
-        }
+        // Set up frame processing pipeline: camera -> process -> matrix
+        camera_.setFrameCallback([this](uint8_t *data, int width, int height) {
+            processFrame(data, width, height);
+        });
 
-        // Set stream format
-        StreamConfiguration &streamConfig = config->at(0);
-        streamConfig.size.width = width_;
-        streamConfig.size.height = height_;
-        streamConfig.pixelFormat = formats::RGB888;
-        streamConfig.bufferCount = 2;
-        
-        config->validate();
-        if (camera_->configure(config.get()) < 0) {
-            std::cerr << "Failed to configure camera" << std::endl;
-            return;
-        }
-
-        // Allocate buffers
-        FrameBufferAllocator *allocator = new FrameBufferAllocator(camera_);
-        for (StreamConfiguration &cfg : *config) {
-            int ret = allocator->allocate(cfg.stream());
-            if (ret < 0) {
-                std::cerr << "Failed to allocate buffers" << std::endl;
-                delete allocator;
-                return;
-            }
-        }
-
-        // Start camera
-        if (camera_->start()) {
-            std::cerr << "Failed to start camera" << std::endl;
-            delete allocator;
-            return;
-        }
-
-        // Create requests
-        std::vector<std::unique_ptr<Request>> requests;
-        for (const StreamConfiguration &cfg : *config) {
-            const std::vector<std::unique_ptr<FrameBuffer>> &buffers = allocator->buffers(cfg.stream());
-            for (unsigned int i = 0; i < buffers.size(); ++i) {
-                std::unique_ptr<Request> request = camera_->createRequest();
-                if (!request) {
-                    std::cerr << "Can't create request" << std::endl;
-                    delete allocator;
-                    return;
-                }
-
-                const std::unique_ptr<FrameBuffer> &buffer = buffers[i];
-                int ret = request->addBuffer(cfg.stream(), buffer.get());
-                if (ret < 0) {
-                    std::cerr << "Can't set buffer for request" << std::endl;
-                    delete allocator;
-                    return;
-                }
-
-                requests.push_back(std::move(request));
-            }
-        }
-
-        // Queue all requests
-        for (auto &request : requests) {
-            camera_->queueRequest(request.get());
-        }
+        // Start camera capture
+        camera_.start();
 
         std::cout << "Camera started. Displaying on LED matrix..." << std::endl;
         std::cout << "Press Ctrl+C to stop" << std::endl;
-
-        // Connect request completed signal to member function
-        camera_->requestCompleted.connect(this, &CameraToMatrix::processRequest);
 
         // Keep running until interrupted
         while (running) {
             usleep(10000); // 10ms sleep
         }
 
-        // Cleanup
-        camera_->stop();
-        delete allocator;
-    }
-
-    void processRequest(Request *request) {
-        if (!running) return;
-        
-        // Process frame
-        const Request::BufferMap &buffers = request->buffers();
-        for (auto it = buffers.begin(); it != buffers.end(); ++it) {
-            FrameBuffer *buffer = it->second;
-            const FrameMetadata &metadata = buffer->metadata();
-
-            if (metadata.status == FrameMetadata::FrameSuccess) {
-                // Get frame data
-                const FrameBuffer::Plane &plane = buffer->planes()[0];
-                void *data = mmap(nullptr, plane.length, PROT_READ, MAP_SHARED, plane.fd.get(), 0);
-                
-                if (data != MAP_FAILED) {
-                    // Convert and display on matrix
-                    displayFrame(static_cast<uint8_t*>(data), width_, height_);
-                    munmap(data, plane.length);
-                }
-            }
-        }
-
-        // Re-queue request
-        request->reuse(Request::ReuseBuffers);
-        camera_->queueRequest(request);
+        camera_.stop();
     }
 
 private:
-    void setupMatrix() {
-        RGBMatrix::Options options;
-        options.rows = rows_;
-        options.cols = cols_;
-        options.chain_length = chain_length_;
-        options.parallel = parallel_;
-        options.hardware_mapping = hardware_mapping_.c_str();
-        options.brightness = 50;
-        options.disable_hardware_pulsing = true;
+    // Process frame - this is where you can add OpenCV/MediaPipe processing
+    void processFrame(uint8_t *data, int width, int height) {
+        // TODO: Add video processing here (OpenCV, MediaPipe, etc.)
+        // For now, just pass through to matrix
         
-        RuntimeOptions runtime_options;
-        runtime_options.drop_privileges = 0;
-        runtime_options.gpio_slowdown = 4;
+        // Example processing pipeline:
+        // 1. Convert to OpenCV Mat if needed
+        // 2. Apply filters/effects
+        // 3. Run MediaPipe detection
+        // 4. Draw overlays
+        // 5. Convert back to RGB888
         
-        matrix_ = RGBMatrix::CreateFromOptions(options, runtime_options);
-        if (matrix_) {
-            canvas_ = matrix_->CreateFrameCanvas();
-        }
+        // Display on matrix
+        matrix_.displayFrame(data, width, height);
     }
 
-    void setupCameraManager() {
-        camera_manager_ = std::make_unique<CameraManager>();
-        camera_manager_->start();
-
-        // Acquire the first available camera
-        std::vector<std::shared_ptr<Camera>> cameras = camera_manager_->cameras();
-        if (!cameras.empty()) {
-            camera_ = cameras[0];
-            if (camera_->acquire()) {
-                camera_.reset();
-            }
-        }
-    }
-
-    void displayFrame(uint8_t *data, int width, int height) {
-        if (!canvas_) return;
-
-        int matrix_width = canvas_->width();
-        int matrix_height = canvas_->height();
-
-        for (int y = 0; y < matrix_height; y++) {
-            for (int x = 0; x < matrix_width; x++) {
-                int src_x = (x * width) / matrix_width;
-                int src_y = (y * height) / matrix_height;
-                
-                int src_idx = (src_y * width + src_x) * 3;
-                uint8_t r = data[src_idx];
-                uint8_t g = data[src_idx + 1];
-                uint8_t b = data[src_idx + 2];
-
-                // Camera outputs BGR, swap to RGB
-                canvas_->SetPixel(x, y, b, g, r);
-            }
-        }
-
-        canvas_ = matrix_->SwapOnVSync(canvas_);
-    }
-
-    void cleanup() {
-        if (camera_) {
-            camera_->release();
-            camera_.reset();
-        }
-        if (camera_manager_) {
-            camera_manager_->stop();
-            camera_manager_.reset();
-        }
-        if (matrix_) {
-            matrix_->Clear();
-        }
-    }
-
-    int width_;
-    int height_;
-    int rows_;
-    int cols_;
-    int chain_length_;
-    int parallel_;
-    std::string hardware_mapping_;
-    RGBMatrix *matrix_;
-    FrameCanvas *canvas_;
-    std::unique_ptr<CameraManager> camera_manager_;
-    std::shared_ptr<Camera> camera_;
+    CameraCapture camera_;
+    MatrixDisplay matrix_;
 };
 
 void printUsage(const char* program) {
