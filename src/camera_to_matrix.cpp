@@ -63,8 +63,9 @@ public:
         std::cout << "Camera started. Displaying on LED matrix..." << std::endl;
         std::cout << "Display modes:" << std::endl;
         std::cout << "  1 - Default camera (pass-through)" << std::endl;
-        std::cout << "  2 - Transformed camera" << std::endl;
-        std::cout << "Press 1 or 2 to switch modes, Ctrl+C to stop" << std::endl;
+        std::cout << "  2 - Transformed camera (filled silhouette)" << std::endl;
+        std::cout << "  3 - Outline only (wireframe)" << std::endl;
+        std::cout << "Press 1, 2, or 3 to switch modes, Ctrl+C to stop" << std::endl;
 
         // Keep running until interrupted
         while (running) {
@@ -89,8 +90,13 @@ private:
                 break;
                 
             case 2:
-                // Mode 2: Transformed camera
+                // Mode 2: Transformed camera (filled silhouette)
                 processTransformedFrame(data, width, height);
+                break;
+                
+            case 3:
+                // Mode 3: Outline only (wireframe)
+                processOutlineFrame(data, width, height);
                 break;
                 
             default:
@@ -137,6 +143,46 @@ private:
         matrix_.displayFrame(silhouette_rgb.data, width, height);
     }
 
+    // Outline frame processing - detect people and draw wireframe outlines
+    void processOutlineFrame(uint8_t *data, int width, int height) {
+        // Convert raw BGR888 data to OpenCV Mat
+        // Note: Camera outputs BGR format (despite being called RGB888)
+        cv::Mat frame_bgr(height, width, CV_8UC3, data);
+        
+        // Apply background subtraction to detect moving objects (people)
+        cv::Mat fg_mask;
+        background_subtractor_->apply(frame_bgr, fg_mask);
+        
+        // Find contours of detected objects
+        std::vector<std::vector<cv::Point>> contours;
+        std::vector<cv::Vec4i> hierarchy;
+        cv::findContours(fg_mask, contours, hierarchy, cv::RETR_EXTERNAL, cv::CHAIN_APPROX_SIMPLE);
+        
+        // Create black outline frame
+        silhouette_frame_ = cv::Mat::zeros(height, width, CV_8UC3);
+        
+        // Filter and draw outlines (only large contours - likely people)
+        const int min_contour_area = 1000;  // Minimum area to consider as a person
+        const int outline_thickness = 2;    // Thickness of outline in pixels
+        
+        for (const auto& contour : contours) {
+            double area = cv::contourArea(contour);
+            if (area > min_contour_area) {
+                // Draw outline only (not filled)
+                cv::drawContours(silhouette_frame_, 
+                                std::vector<std::vector<cv::Point>>{contour}, 
+                                -1, cv::Scalar(255, 255, 255), outline_thickness);
+            }
+        }
+        
+        // Convert back to RGB888 for matrix display
+        cv::Mat outline_rgb;
+        cv::cvtColor(silhouette_frame_, outline_rgb, cv::COLOR_BGR2RGB);
+        
+        // Display outline on matrix
+        matrix_.displayFrame(outline_rgb.data, width, height);
+    }
+
     void setupKeyboardInput() {
         // Save current terminal settings
         tcgetattr(STDIN_FILENO, &original_termios_);
@@ -176,7 +222,10 @@ private:
                         std::cout << "Switched to mode 1: Default camera" << std::endl;
                     } else if (key == '2') {
                         display_mode_ = 2;
-                        std::cout << "Switched to mode 2: Transformed camera" << std::endl;
+                        std::cout << "Switched to mode 2: Transformed camera (filled silhouette)" << std::endl;
+                    } else if (key == '3') {
+                        display_mode_ = 3;
+                        std::cout << "Switched to mode 3: Outline only (wireframe)" << std::endl;
                     }
                 }
             }
