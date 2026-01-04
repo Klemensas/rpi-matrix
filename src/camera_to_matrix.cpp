@@ -41,23 +41,7 @@ public:
         cleanup();
     }
 
-    bool initialize() {
-        if (!matrix_) {
-            std::cerr << "Failed to create RGB matrix" << std::endl;
-            return false;
-        }
-
-        if (!camera_) {
-            std::cerr << "Failed to open camera" << std::endl;
-            return false;
-        }
-
-        return true;
-    }
-
     void run() {
-        acquireCamera();
-        
         if (geteuid() == 0) {
             const char* sudo_user = std::getenv("SUDO_USER");
             const char* target_user = sudo_user ? sudo_user : "pi";
@@ -66,10 +50,6 @@ public:
                 setgid(pw->pw_gid);
                 setuid(pw->pw_uid);
             }
-        }
-        
-        if (!initialize()) {
-            return;
         }
 
         // Configure camera stream
@@ -206,17 +186,14 @@ private:
     void setupCameraManager() {
         camera_manager_ = std::make_unique<CameraManager>();
         camera_manager_->start();
-    }
 
-    void acquireCamera() {
-        if (!camera_manager_) return;
-
+        // Acquire the first available camera
         std::vector<std::shared_ptr<Camera>> cameras = camera_manager_->cameras();
-        if (cameras.empty()) return;
-
-        camera_ = cameras[0];
-        if (camera_->acquire()) {
-            camera_.reset();
+        if (!cameras.empty()) {
+            camera_ = cameras[0];
+            if (camera_->acquire()) {
+                camera_.reset();
+            }
         }
     }
 
