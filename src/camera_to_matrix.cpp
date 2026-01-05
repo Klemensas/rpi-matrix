@@ -14,6 +14,9 @@
 #include <sys/select.h>
 #include <termios.h>
 #include <vector>
+#include <chrono>
+#include <fstream>
+#include <sstream>
 
 volatile bool running = true;
 
@@ -31,8 +34,12 @@ public:
         : camera_(width, height),
           matrix_(rows, cols, chain_length, parallel, hardware_mapping),
           display_mode_(1),  // Start with mode 1 (default camera)
+          debug_enabled_(false),
           width_(width),
           height_(height),
+          frame_count_(0),
+          last_fps_time_(std::chrono::steady_clock::now()),
+          current_fps_(0.0),
           background_subtractor_(cv::createBackgroundSubtractorMOG2(500, 16, true)) {
         // Initialize silhouette processing buffers
         silhouette_frame_ = cv::Mat::zeros(height, width, CV_8UC3);
@@ -65,7 +72,8 @@ public:
         std::cout << "  1 - Default camera (pass-through)" << std::endl;
         std::cout << "  2 - Transformed camera (filled silhouette)" << std::endl;
         std::cout << "  3 - Outline only (wireframe)" << std::endl;
-        std::cout << "Press 1, 2, or 3 to switch modes, Ctrl+C to stop" << std::endl;
+        std::cout << "  d - Toggle debug info (FPS and temperature)" << std::endl;
+        std::cout << "Press 1, 2, 3, or d to switch modes, Ctrl+C to stop" << std::endl;
 
         // Keep running until interrupted
         while (running) {
@@ -81,33 +89,47 @@ public:
 private:
     // Process frame - routes to appropriate display mode
     void processFrame(uint8_t *data, int width, int height) {
+        // Update FPS tracking
+        frame_count_++;
+        auto now = std::chrono::steady_clock::now();
+        auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - last_fps_time_).count();
+        
+        if (elapsed >= 1000) {  // Update FPS every second
+            current_fps_ = (frame_count_ * 1000.0) / elapsed;
+            frame_count_ = 0;
+            last_fps_time_ = now;
+        }
+        
         int mode = display_mode_.load();
+        
+        bool debug = debug_enabled_.load();
+        float temp = debug ? readTemperature() : 0.0f;
         
         switch (mode) {
             case 1:
                 // Mode 1: Default camera (pass-through)
-                matrix_.displayFrame(data, width, height);
+                matrix_.displayFrame(data, width, height, current_fps_, temp, debug);
                 break;
                 
             case 2:
                 // Mode 2: Transformed camera (filled silhouette)
-                processTransformedFrame(data, width, height);
+                processTransformedFrame(data, width, height, debug, temp);
                 break;
                 
             case 3:
                 // Mode 3: Outline only (wireframe)
-                processOutlineFrame(data, width, height);
+                processOutlineFrame(data, width, height, debug, temp);
                 break;
                 
             default:
                 // Fallback to default
-                matrix_.displayFrame(data, width, height);
+                matrix_.displayFrame(data, width, height, current_fps_, temp, debug);
                 break;
         }
     }
 
     // Transformed frame processing - detect people and draw silhouettes
-    void processTransformedFrame(uint8_t *data, int width, int height) {
+    void processTransformedFrame(uint8_t *data, int width, int height, bool show_debug = false, float temp = 0.0f) {
         // Convert raw BGR888 data to OpenCV Mat
         // Note: Camera outputs BGR format (despite being called RGB888)
         cv::Mat frame_bgr(height, width, CV_8UC3, data);
@@ -140,11 +162,11 @@ private:
         cv::cvtColor(silhouette_frame_, silhouette_rgb, cv::COLOR_BGR2RGB);
         
         // Display silhouette on matrix
-        matrix_.displayFrame(silhouette_rgb.data, width, height);
+        matrix_.displayFrame(silhouette_rgb.data, width, height, current_fps_, temp, show_debug);
     }
 
     // Outline frame processing - detect people and draw wireframe outlines
-    void processOutlineFrame(uint8_t *data, int width, int height) {
+    void processOutlineFrame(uint8_t *data, int width, int height, bool show_debug = false, float temp = 0.0f) {
         // Convert raw BGR888 data to OpenCV Mat
         // Note: Camera outputs BGR format (despite being called RGB888)
         cv::Mat frame_bgr(height, width, CV_8UC3, data);
@@ -180,7 +202,7 @@ private:
         cv::cvtColor(silhouette_frame_, outline_rgb, cv::COLOR_BGR2RGB);
         
         // Display outline on matrix
-        matrix_.displayFrame(outline_rgb.data, width, height);
+        matrix_.displayFrame(outline_rgb.data, width, height, current_fps_, temp, show_debug);
     }
 
     void setupKeyboardInput() {
@@ -226,18 +248,39 @@ private:
                     } else if (key == '3') {
                         display_mode_ = 3;
                         std::cout << "Switched to mode 3: Outline only (wireframe)" << std::endl;
+                    } else if (key == 'd' || key == 'D') {
+                        bool new_state = !debug_enabled_.load();
+                        debug_enabled_ = new_state;
+                        std::cout << "Debug info " << (new_state ? "enabled" : "disabled") << std::endl;
                     }
                 }
             }
         }
     }
+    
+    float readTemperature() {
+        std::ifstream temp_file("/sys/class/thermal/thermal_zone0/temp");
+        if (temp_file.is_open()) {
+            int temp_millidegrees;
+            temp_file >> temp_millidegrees;
+            temp_file.close();
+            return temp_millidegrees / 1000.0f;  // Convert from millidegrees to degrees
+        }
+        return 0.0f;  // Return 0 if unable to read
+    }
 
     CameraCapture camera_;
     MatrixDisplay matrix_;
     std::atomic<int> display_mode_;  // Thread-safe mode variable
+    std::atomic<bool> debug_enabled_;  // Thread-safe debug toggle
     int width_;
     int height_;
     struct termios original_termios_;  // For restoring terminal settings
+    
+    // FPS tracking
+    std::atomic<uint64_t> frame_count_;
+    std::chrono::steady_clock::time_point last_fps_time_;
+    std::atomic<double> current_fps_;
     
     // Silhouette processing
     cv::Ptr<cv::BackgroundSubtractor> background_subtractor_;

@@ -3,9 +3,12 @@
 
 #include <string>
 #include <led-matrix.h>
+#include <graphics.h>
 
 using rgb_matrix::RGBMatrix;
 using rgb_matrix::FrameCanvas;
+using rgb_matrix::Font;
+using rgb_matrix::Color;
 
 class MatrixDisplay {
 public:
@@ -17,7 +20,8 @@ public:
     int getWidth() const;
     int getHeight() const;
 
-    void displayFrame(uint8_t *data, int width, int height);
+    void displayFrame(uint8_t *data, int width, int height, 
+                      double fps = 0.0, float temperature_celsius = 0.0, bool show_debug = false);
 
 private:
     void setup();
@@ -30,6 +34,8 @@ private:
     std::string hardware_mapping_;
     RGBMatrix *matrix_;
     FrameCanvas *canvas_;
+    Font *font_;
+    bool font_loaded_;
 };
 
 #endif // MATRIX_DISPLAY_H
