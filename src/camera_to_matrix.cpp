@@ -18,6 +18,7 @@
 #include <termios.h>
 #include <vector>
 #include <functional>
+#include <cmath>
 
 using rgb_matrix::FrameCanvas;
 
@@ -42,7 +43,8 @@ public:
           debug_enabled_(false),
           width_(width),
           height_(height),
-          background_subtractor_(cv::createBackgroundSubtractorMOG2(500, 16, true)) {
+          background_subtractor_(cv::createBackgroundSubtractorMOG2(500, 16, true)),
+          trail_alpha_(0.7f) {
         // Initialize silhouette processing buffers
         silhouette_frame_ = cv::Mat::zeros(height, width, CV_8UC3);
     }
@@ -74,8 +76,9 @@ public:
         std::cout << "  1 - Default camera (pass-through)" << std::endl;
         std::cout << "  2 - Transformed camera (filled silhouette)" << std::endl;
         std::cout << "  3 - Outline only (wireframe)" << std::endl;
+        std::cout << "  4 - Motion Trails (Ghost Effect)" << std::endl;
         std::cout << "  d - Toggle debug info (FPS and temperature)" << std::endl;
-        std::cout << "Press 1, 2, 3, or d to switch modes, Ctrl+C to stop" << std::endl;
+        std::cout << "Press 1-4 or d to switch modes, Ctrl+C to stop" << std::endl;
 
         // Keep running until interrupted
         while (running) {
@@ -123,6 +126,11 @@ private:
             case 3:
                 // Mode 3: Outline only (wireframe)
                 processOutlineFrame(data, width, height, overlay_callback);
+                break;
+                
+            case 4:
+                // Mode 4: Motion Trails (Ghost Effect)
+                processMotionTrailsFrame(data, width, height, overlay_callback);
                 break;
                 
             default:
@@ -211,6 +219,43 @@ private:
         matrix_.displayFrame(outline_rgb.data, width, height, overlay_callback);
     }
 
+    // Motion Trails (Ghost Effect) - Variation #3
+    void processMotionTrailsFrame(uint8_t *data, int width, int height, 
+                                  std::function<void(FrameCanvas*)> overlay_callback = nullptr) {
+        // Convert raw BGR888 data to OpenCV Mat
+        cv::Mat frame_bgr(height, width, CV_8UC3, data);
+        
+        // Apply background subtraction to detect moving objects (people)
+        cv::Mat fg_mask;
+        background_subtractor_->apply(frame_bgr, fg_mask);
+        
+        // Find contours of detected objects
+        std::vector<std::vector<cv::Point>> contours;
+        std::vector<cv::Vec4i> hierarchy;
+        cv::findContours(fg_mask, contours, hierarchy, cv::RETR_EXTERNAL, cv::CHAIN_APPROX_SIMPLE);
+        
+        // Fade previous frame to create trailing effect
+        silhouette_frame_ *= trail_alpha_;
+        
+        // Filter and draw silhouettes (only large contours - likely people)
+        const int min_contour_area = 1000;
+        for (const auto& contour : contours) {
+            double area = cv::contourArea(contour);
+            if (area > min_contour_area) {
+                // Draw filled white silhouette on top of faded previous frame
+                cv::drawContours(silhouette_frame_, std::vector<std::vector<cv::Point>>{contour}, 
+                                -1, cv::Scalar(255, 255, 255), cv::FILLED);
+            }
+        }
+        
+        // Convert back to RGB888 for matrix display
+        cv::Mat silhouette_rgb;
+        cv::cvtColor(silhouette_frame_, silhouette_rgb, cv::COLOR_BGR2RGB);
+        
+        // Display on matrix
+        matrix_.displayFrame(silhouette_rgb.data, width, height, overlay_callback);
+    }
+
     void setupKeyboardInput() {
         // Save current terminal settings
         tcgetattr(STDIN_FILENO, &original_termios_);
@@ -254,6 +299,9 @@ private:
                     } else if (key == '3') {
                         display_mode_ = 3;
                         std::cout << "Switched to mode 3: Outline only (wireframe)" << std::endl;
+                    } else if (key == '4') {
+                        display_mode_ = 4;
+                        std::cout << "Switched to mode 4: Motion Trails (Ghost Effect)" << std::endl;
                     } else if (key == 'd' || key == 'D') {
                         bool new_state = !debug_enabled_.load();
                         debug_enabled_ = new_state;
@@ -277,6 +325,9 @@ private:
     // Silhouette processing
     cv::Ptr<cv::BackgroundSubtractor> background_subtractor_;
     cv::Mat silhouette_frame_;
+    
+    // Motion Trails parameters
+    float trail_alpha_;
 };
 
 void printUsage(const char* program) {
