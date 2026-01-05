@@ -3,12 +3,10 @@
 
 #include <string>
 #include <led-matrix.h>
-#include <graphics.h>
+#include <functional>
 
 using rgb_matrix::RGBMatrix;
 using rgb_matrix::FrameCanvas;
-using rgb_matrix::Font;
-using rgb_matrix::Color;
 
 class MatrixDisplay {
 public:
@@ -20,8 +18,10 @@ public:
     int getWidth() const;
     int getHeight() const;
 
+    // Display frame with optional overlay callback
+    // The overlay callback is called before SwapOnVSync, allowing drawing on the canvas
     void displayFrame(uint8_t *data, int width, int height, 
-                      double fps = 0.0, float temperature_celsius = 0.0, bool show_debug = false);
+                      std::function<void(FrameCanvas*)> overlay_callback = nullptr);
 
 private:
     void setup();
@@ -34,8 +34,6 @@ private:
     std::string hardware_mapping_;
     RGBMatrix *matrix_;
     FrameCanvas *canvas_;
-    Font *font_;
-    bool font_loaded_;
 };
 
 #endif // MATRIX_DISPLAY_H

@@ -40,6 +40,8 @@ set(CAMERA_SOURCES
     src/camera_to_matrix.cpp
     src/components/camera_capture.cpp
     src/components/matrix_display.cpp
+    src/components/debug_overlay.cpp
+    src/components/debug_data_collector.cpp
 )
 set(RPICAM_SOURCES src/rpicam_to_matrix.cpp)
 
