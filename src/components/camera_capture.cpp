@@ -46,7 +46,7 @@ void CameraCapture::start() {
     streamConfig.size.width = width_;
     streamConfig.size.height = height_;
     streamConfig.pixelFormat = formats::RGB888;
-    streamConfig.bufferCount = 2;
+    streamConfig.bufferCount = 4;  // Increased from 2 to reduce backpressure
     
     config->validate();
     if (camera_->configure(config.get()) < 0) {

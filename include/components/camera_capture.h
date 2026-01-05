@@ -8,6 +8,7 @@
 #include <libcamera/camera.h>
 #include <libcamera/framebuffer_allocator.h>
 #include <libcamera/request.h>
+#include <libcamera/controls.h>
 
 using namespace libcamera;
 
