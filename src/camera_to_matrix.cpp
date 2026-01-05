@@ -44,7 +44,8 @@ public:
           width_(width),
           height_(height),
           background_subtractor_(cv::createBackgroundSubtractorMOG2(500, 16, true)),
-          trail_alpha_(0.7f) {
+          trail_alpha_(0.7f),
+          energy_decay_(0.97f) {     // Energy decay factor per frame (0.97 = 3% decay, slower fade)
         // Initialize silhouette processing buffers
         silhouette_frame_ = cv::Mat::zeros(height, width, CV_8UC3);
     }
@@ -77,8 +78,9 @@ public:
         std::cout << "  2 - Transformed camera (filled silhouette)" << std::endl;
         std::cout << "  3 - Outline only (wireframe)" << std::endl;
         std::cout << "  4 - Motion Trails (Ghost Effect)" << std::endl;
+        std::cout << "  5 - Energy-based Motion (movement adds energy, decays over time)" << std::endl;
         std::cout << "  d - Toggle debug info (FPS and temperature)" << std::endl;
-        std::cout << "Press 1-4 or d to switch modes, Ctrl+C to stop" << std::endl;
+        std::cout << "Press 1-5 or d to switch modes, Ctrl+C to stop" << std::endl;
 
         // Keep running until interrupted
         while (running) {
@@ -131,6 +133,11 @@ private:
             case 4:
                 // Mode 4: Motion Trails (Ghost Effect)
                 processMotionTrailsFrame(data, width, height, overlay_callback);
+                break;
+                
+            case 5:
+                // Mode 5: Energy-based motion (movement adds energy, decays over time)
+                processEnergyMotionFrame(data, width, height, overlay_callback);
                 break;
                 
             default:
@@ -256,6 +263,43 @@ private:
         matrix_.displayFrame(silhouette_rgb.data, width, height, overlay_callback);
     }
 
+    // Energy-based Motion - Improved ghost effect with energy system
+    void processEnergyMotionFrame(uint8_t *data, int width, int height, 
+                                  std::function<void(FrameCanvas*)> overlay_callback = nullptr) {
+        // Convert raw BGR888 data to OpenCV Mat
+        cv::Mat frame_bgr(height, width, CV_8UC3, data);
+        
+        // Apply background subtraction to detect moving objects (people)
+        cv::Mat fg_mask;
+        background_subtractor_->apply(frame_bgr, fg_mask);
+        
+        // Find contours of detected objects
+        std::vector<std::vector<cv::Point>> contours;
+        std::vector<cv::Vec4i> hierarchy;
+        cv::findContours(fg_mask, contours, hierarchy, cv::RETR_EXTERNAL, cv::CHAIN_APPROX_SIMPLE);
+        
+        // Apply simple uniform decay - fast and efficient
+        silhouette_frame_ *= 0.92f;  // 8% decay per frame
+        
+        // Draw new silhouettes directly on faded frame (they're always brighter, so no max() needed)
+        const int min_contour_area = 1000;
+        for (const auto& contour : contours) {
+            double area = cv::contourArea(contour);
+            if (area > min_contour_area) {
+                // Draw filled white silhouette at full brightness (overwrites faded areas)
+                cv::drawContours(silhouette_frame_, std::vector<std::vector<cv::Point>>{contour}, 
+                                -1, cv::Scalar(255, 255, 255), cv::FILLED);
+            }
+        }
+        
+        // Convert back to RGB888 for matrix display
+        cv::Mat energy_rgb;
+        cv::cvtColor(silhouette_frame_, energy_rgb, cv::COLOR_BGR2RGB);
+        
+        // Display on matrix
+        matrix_.displayFrame(energy_rgb.data, width, height, overlay_callback);
+    }
+
     void setupKeyboardInput() {
         // Save current terminal settings
         tcgetattr(STDIN_FILENO, &original_termios_);
@@ -302,6 +346,9 @@ private:
                     } else if (key == '4') {
                         display_mode_ = 4;
                         std::cout << "Switched to mode 4: Motion Trails (Ghost Effect)" << std::endl;
+                    } else if (key == '5') {
+                        display_mode_ = 5;
+                        std::cout << "Switched to mode 5: Energy-based Motion" << std::endl;
                     } else if (key == 'd' || key == 'D') {
                         bool new_state = !debug_enabled_.load();
                         debug_enabled_ = new_state;
@@ -328,6 +375,9 @@ private:
     
     // Motion Trails parameters
     float trail_alpha_;
+    
+    // Energy-based Motion parameters
+    float energy_decay_;            // Energy decay factor per frame (0.0-1.0)
 };
 
 void printUsage(const char* program) {
