@@ -3,8 +3,12 @@
 #include "components/software_matrix_display.h"
 
 #include <opencv2/videoio.hpp>
+#include <opencv2/imgproc.hpp>
 #include <iostream>
 #include <cstring>
+#include <atomic>
+#include <iomanip>
+#include <sstream>
 
 static void printUsage(const char* program) {
     std::cout << "Usage: " << program << " [options]\n"
@@ -21,8 +25,47 @@ static void printUsage(const char* program) {
               << "\n"
               << "Keys:\n"
               << "  1-5  switch display modes\n"
+              << "  d    toggle debug info (FPS and temperature)\n"
               << "  q/ESC quit\n"
               << std::endl;
+}
+
+// Draw debug overlay on OpenCV Mat (desktop version)
+static void drawDebugOverlay(cv::Mat& frame, double fps, float temperature_celsius) {
+    if (frame.empty()) return;
+
+    // Prepare debug text
+    std::ostringstream fps_text;
+    fps_text << "FPS: " << std::fixed << std::setprecision(1) << fps;
+
+    std::ostringstream temp_text;
+    temp_text << "Temp: " << std::fixed << std::setprecision(1) << temperature_celsius << "C";
+
+    // Draw text with background for readability
+    int font = cv::FONT_HERSHEY_SIMPLEX;
+    double font_scale = 0.5;
+    int thickness = 1;
+    int baseline = 0;
+
+    // FPS text
+    cv::Size fps_size = cv::getTextSize(fps_text.str(), font, font_scale, thickness, &baseline);
+    cv::Point fps_pos(5, 15);
+    cv::rectangle(frame, 
+                  cv::Point(fps_pos.x - 2, fps_pos.y - fps_size.height - 2),
+                  cv::Point(fps_pos.x + fps_size.width + 2, fps_pos.y + baseline + 2),
+                  cv::Scalar(0, 0, 0), -1);  // Black background
+    cv::putText(frame, fps_text.str(), fps_pos, font, font_scale, 
+                cv::Scalar(0, 255, 0), thickness);  // Green text
+
+    // Temperature text
+    cv::Size temp_size = cv::getTextSize(temp_text.str(), font, font_scale, thickness, &baseline);
+    cv::Point temp_pos(5, 35);
+    cv::rectangle(frame,
+                  cv::Point(temp_pos.x - 2, temp_pos.y - temp_size.height - 2),
+                  cv::Point(temp_pos.x + temp_size.width + 2, temp_pos.y + baseline + 2),
+                  cv::Scalar(0, 0, 0), -1);  // Black background
+    cv::putText(frame, temp_text.str(), temp_pos, font, font_scale,
+                cv::Scalar(0, 255, 255), thickness);  // Yellow text
 }
 
 int main(int argc, char *argv[]) {
@@ -81,9 +124,17 @@ int main(int argc, char *argv[]) {
     AppCore core(width, height);
     DebugDataCollector debug;
     SoftwareMatrixDisplay display(rows, cols, chain_length, parallel);
+    std::atomic<bool> debug_enabled(true);
 
     std::cout << "Desktop runner started. Displaying software matrix preview." << std::endl;
-    std::cout << "Modes: 1=pass-through, 2=filled silhouette, 3=outline, 4=trails, 5=energy" << std::endl;
+    std::cout << "Display modes:" << std::endl;
+    std::cout << "  1 - Default camera (pass-through)" << std::endl;
+    std::cout << "  2 - Transformed camera (filled silhouette)" << std::endl;
+    std::cout << "  3 - Outline only (wireframe)" << std::endl;
+    std::cout << "  4 - Motion Trails (Ghost Effect)" << std::endl;
+    std::cout << "  5 - Energy-based Motion (movement adds energy, decays over time)" << std::endl;
+    std::cout << "  d - Toggle debug info (FPS and temperature)" << std::endl;
+    std::cout << "  q/ESC - Quit" << std::endl;
 
     cv::Mat frame;
     cv::Mat out;
@@ -91,8 +142,17 @@ int main(int argc, char *argv[]) {
     while (true) {
         if (!cap.read(frame) || frame.empty()) break;
 
-        debug.recordFrame();
+        // Update debug data if enabled
+        if (debug_enabled.load()) {
+            debug.recordFrame();
+        }
+
         core.processFrame(frame, out);
+
+        // Draw debug overlay if enabled
+        if (debug_enabled.load() && !out.empty()) {
+            drawDebugOverlay(out, debug.getFPS(), debug.getTemperature());
+        }
 
         int key = display.displayFrame(out, /*delay_ms=*/1);
         if (key == 27 || key == 'q' || key == 'Q') break;
@@ -100,6 +160,10 @@ int main(int argc, char *argv[]) {
         if (key >= '1' && key <= '5') {
             core.setDisplayMode(key - '0');
             std::cout << "Switched to mode " << (key - '0') << std::endl;
+        } else if (key == 'd' || key == 'D') {
+            bool new_state = !debug_enabled.load();
+            debug_enabled = new_state;
+            std::cout << "Debug info " << (new_state ? "enabled" : "disabled") << std::endl;
         }
     }
 
