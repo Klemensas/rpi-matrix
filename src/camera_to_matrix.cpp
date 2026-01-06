@@ -40,7 +40,7 @@ public:
           debug_overlay_(),
           debug_data_collector_(),
           display_mode_(1),  // Start with mode 1 (default camera)
-          debug_enabled_(false),
+          debug_enabled_(true),
           width_(width),
           height_(height),
           background_subtractor_(cv::createBackgroundSubtractorMOG2(500, 16, true)),
@@ -176,7 +176,7 @@ private:
                                 -1, cv::Scalar(255, 255, 255), cv::FILLED);
             }
         }
-        
+
         // Convert back to RGB888 for matrix display
         cv::Mat silhouette_rgb;
         cv::cvtColor(silhouette_frame_, silhouette_rgb, cv::COLOR_BGR2RGB);
@@ -217,7 +217,7 @@ private:
                                 -1, cv::Scalar(255, 255, 255), outline_thickness);
             }
         }
-        
+
         // Convert back to RGB888 for matrix display
         cv::Mat outline_rgb;
         cv::cvtColor(silhouette_frame_, outline_rgb, cv::COLOR_BGR2RGB);
@@ -230,6 +230,7 @@ private:
     void processMotionTrailsFrame(uint8_t *data, int width, int height, 
                                   std::function<void(FrameCanvas*)> overlay_callback = nullptr) {
         // Convert raw BGR888 data to OpenCV Mat
+        // Note: Camera outputs BGR format (despite being called RGB888)
         cv::Mat frame_bgr(height, width, CV_8UC3, data);
         
         // Apply background subtraction to detect moving objects (people)
@@ -254,7 +255,7 @@ private:
                                 -1, cv::Scalar(255, 255, 255), cv::FILLED);
             }
         }
-        
+
         // Convert back to RGB888 for matrix display
         cv::Mat silhouette_rgb;
         cv::cvtColor(silhouette_frame_, silhouette_rgb, cv::COLOR_BGR2RGB);
@@ -267,6 +268,7 @@ private:
     void processEnergyMotionFrame(uint8_t *data, int width, int height, 
                                   std::function<void(FrameCanvas*)> overlay_callback = nullptr) {
         // Convert raw BGR888 data to OpenCV Mat
+        // Note: Camera outputs BGR format (despite being called RGB888)
         cv::Mat frame_bgr(height, width, CV_8UC3, data);
         
         // Apply background subtraction to detect moving objects (people)
@@ -281,7 +283,7 @@ private:
         // Apply simple uniform decay - fast and efficient
         silhouette_frame_ *= 0.92f;  // 8% decay per frame
         
-        // Draw new silhouettes directly on faded frame (they're always brighter, so no max() needed)
+        // Draw new silhouettes directly on faded frame
         const int min_contour_area = 1000;
         for (const auto& contour : contours) {
             double area = cv::contourArea(contour);
@@ -291,7 +293,7 @@ private:
                                 -1, cv::Scalar(255, 255, 255), cv::FILLED);
             }
         }
-        
+
         // Convert back to RGB888 for matrix display
         cv::Mat energy_rgb;
         cv::cvtColor(silhouette_frame_, energy_rgb, cv::COLOR_BGR2RGB);

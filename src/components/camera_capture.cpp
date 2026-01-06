@@ -1,5 +1,7 @@
 #include "components/camera_capture.h"
 #include <iostream>
+#include <array>
+#include <cstdint>
 #include <sys/mman.h>
 #include <unistd.h>
 
@@ -7,8 +9,8 @@
 extern volatile bool running;
 
 CameraCapture::CameraCapture(int width, int height) 
-    : width_(width), height_(height), allocator_(nullptr), 
-      frame_callback_connected_(false) {
+    : width_(width), height_(height), actual_width_(0), actual_height_(0),
+      allocator_(nullptr), frame_callback_connected_(false) {
     setup();
 }
 
@@ -35,6 +37,9 @@ void CameraCapture::start() {
     }
 
     // Configure camera stream
+    // Use VideoRecording role to bias libcamera toward high-throughput/high-fps pipelines.
+    // std::unique_ptr<CameraConfiguration> config = camera_->generateConfiguration({StreamRole::VideoRecording});
+
     std::unique_ptr<CameraConfiguration> config = camera_->generateConfiguration({StreamRole::Viewfinder});
     if (!config) {
         std::cerr << "Failed to generate camera configuration" << std::endl;
@@ -43,16 +48,29 @@ void CameraCapture::start() {
 
     // Set stream format
     StreamConfiguration &streamConfig = config->at(0);
+    
+    // Request the output resolution the app asked for.
+    // libcamera will still select an internal sensor mode (often 1536x864 for 120fps on IMX708)
+    // and scale to this size in the ISP.
     streamConfig.size.width = width_;
     streamConfig.size.height = height_;
     streamConfig.pixelFormat = formats::RGB888;
-    streamConfig.bufferCount = 4;  // Increased from 2 to reduce backpressure
+    streamConfig.bufferCount = 6;  // More buffers helps sustain higher FPS
+    
+    std::cout << "Requesting output stream: " << width_ << "x" << height_ << " (RGB888)" << std::endl;
+    std::cout << "Requesting ~120fps via FrameDurationLimits (8333us)" << std::endl;
     
     config->validate();
+
     if (camera_->configure(config.get()) < 0) {
         std::cerr << "Failed to configure camera" << std::endl;
         return;
     }
+
+    // Store actual stream dimensions after configure (may differ after validate/configure)
+    actual_width_ = config->at(0).size.width;
+    actual_height_ = config->at(0).size.height;
+    std::cout << "Actual configured stream: " << actual_width_ << "x" << actual_height_ << std::endl;
 
     // Allocate buffers
     allocator_ = new FrameBufferAllocator(camera_);
@@ -86,6 +104,12 @@ void CameraCapture::start() {
                 std::cerr << "Can't set buffer for request" << std::endl;
                 return;
             }
+
+            // Request high FPS by constraining frame duration.
+            // FrameDurationLimits is in microseconds. 120 fps -> 8333 us.
+            // Note: If exposure exceeds this, the camera may still not reach 120 fps in low light.
+            const std::array<int64_t, 2> frame_duration_limits = {8333, 8333};
+            request->controls().set(controls::FrameDurationLimits, frame_duration_limits);
 
             camera_->queueRequest(request.release());
         }
@@ -136,8 +160,8 @@ void CameraCapture::processRequest(Request *request) {
             void *data = mmap(nullptr, plane.length, PROT_READ, MAP_SHARED, plane.fd.get(), 0);
             
             if (data != MAP_FAILED) {
-                // Call the frame callback
-                frame_callback_(static_cast<uint8_t*>(data), width_, height_);
+                // Call the frame callback with actual camera dimensions
+                frame_callback_(static_cast<uint8_t*>(data), actual_width_, actual_height_);
                 munmap(data, plane.length);
             }
         }
@@ -145,6 +169,7 @@ void CameraCapture::processRequest(Request *request) {
 
     // Re-queue request
     request->reuse(Request::ReuseBuffers);
+
     camera_->queueRequest(request);
 }
 

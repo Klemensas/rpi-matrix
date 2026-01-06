@@ -32,6 +32,8 @@ private:
 
     int width_;
     int height_;
+    int actual_width_;   // Actual camera stream width
+    int actual_height_;  // Actual camera stream height
     std::unique_ptr<CameraManager> camera_manager_;
     std::shared_ptr<Camera> camera_;
     FrameBufferAllocator *allocator_;
