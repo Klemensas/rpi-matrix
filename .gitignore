@@ -3,6 +3,7 @@ build/
 *.o
 *.so
 *.a
+__notes/
 
 # CMake
 CMakeCache.txt
