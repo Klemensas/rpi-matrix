@@ -2,10 +2,9 @@
 #include "components/matrix_display.h"
 #include "components/debug_overlay.h"
 #include "components/debug_data_collector.h"
+#include "app/app_core.h"
 #include <led-matrix.h>
-#include <opencv2/opencv.hpp>
-#include <opencv2/imgproc.hpp>
-#include <opencv2/video/background_segm.hpp>
+#include <opencv2/core.hpp>
 #include <iostream>
 #include <csignal>
 #include <cstring>
@@ -39,16 +38,8 @@ public:
           matrix_(rows, cols, chain_length, parallel, hardware_mapping),
           debug_overlay_(),
           debug_data_collector_(),
-          display_mode_(1),  // Start with mode 1 (default camera)
           debug_enabled_(true),
-          width_(width),
-          height_(height),
-          background_subtractor_(cv::createBackgroundSubtractorMOG2(500, 16, true)),
-          trail_alpha_(0.7f),
-          energy_decay_(0.97f) {     // Energy decay factor per frame (0.97 = 3% decay, slower fade)
-        // Initialize silhouette processing buffers
-        silhouette_frame_ = cv::Mat::zeros(height, width, CV_8UC3);
-    }
+          core_(width, height) {}
 
     void run() {
         if (geteuid() == 0) {
@@ -96,7 +87,6 @@ public:
 private:
     // Process frame - routes to appropriate display mode
     void processFrame(uint8_t *data, int width, int height) {
-        int mode = display_mode_.load();
         bool debug = debug_enabled_.load();
         
         // Only update debug data collection when debug mode is enabled
@@ -113,193 +103,15 @@ private:
                                    debug_data_collector_.getTemperature());
             };
         }
-        
-        switch (mode) {
-            case 1:
-                // Mode 1: Default camera (pass-through)
-                matrix_.displayFrame(data, width, height, overlay_callback);
-                break;
-                
-            case 2:
-                // Mode 2: Transformed camera (filled silhouette)
-                processTransformedFrame(data, width, height, overlay_callback);
-                break;
-                
-            case 3:
-                // Mode 3: Outline only (wireframe)
-                processOutlineFrame(data, width, height, overlay_callback);
-                break;
-                
-            case 4:
-                // Mode 4: Motion Trails (Ghost Effect)
-                processMotionTrailsFrame(data, width, height, overlay_callback);
-                break;
-                
-            case 5:
-                // Mode 5: Energy-based motion (movement adds energy, decays over time)
-                processEnergyMotionFrame(data, width, height, overlay_callback);
-                break;
-                
-            default:
-                // Fallback to default
-                matrix_.displayFrame(data, width, height, overlay_callback);
-                break;
+
+        // libcamera stream is configured as RGB888, but in practice is BGR byte-order in this pipeline.
+        // Treat input as BGR consistently with OpenCV.
+        cv::Mat in_bgr(height, width, CV_8UC3, data);
+        cv::Mat out_bgr;
+        core_.processFrame(in_bgr, out_bgr);
+        if (!out_bgr.empty()) {
+            matrix_.displayFrame(out_bgr.data, out_bgr.cols, out_bgr.rows, overlay_callback);
         }
-    }
-
-    // Transformed frame processing - detect people and draw silhouettes
-    void processTransformedFrame(uint8_t *data, int width, int height, 
-                                  std::function<void(FrameCanvas*)> overlay_callback = nullptr) {
-        // Convert raw BGR888 data to OpenCV Mat
-        // Note: Camera outputs BGR format (despite being called RGB888)
-        cv::Mat frame_bgr(height, width, CV_8UC3, data);
-        
-        // Apply background subtraction to detect moving objects (people)
-        cv::Mat fg_mask;
-        background_subtractor_->apply(frame_bgr, fg_mask);
-        
-        // Find contours of detected objects
-        std::vector<std::vector<cv::Point>> contours;
-        std::vector<cv::Vec4i> hierarchy;
-        cv::findContours(fg_mask, contours, hierarchy, cv::RETR_EXTERNAL, cv::CHAIN_APPROX_SIMPLE);
-        
-        // Create black silhouette frame
-        silhouette_frame_ = cv::Mat::zeros(height, width, CV_8UC3);
-        
-        // Filter and draw silhouettes (only large contours - likely people)
-        const int min_contour_area = 1000;  // Minimum area to consider as a person
-        for (const auto& contour : contours) {
-            double area = cv::contourArea(contour);
-            if (area > min_contour_area) {
-                // Draw filled white silhouette
-                cv::drawContours(silhouette_frame_, std::vector<std::vector<cv::Point>>{contour}, 
-                                -1, cv::Scalar(255, 255, 255), cv::FILLED);
-            }
-        }
-
-        // Convert back to RGB888 for matrix display
-        cv::Mat silhouette_rgb;
-        cv::cvtColor(silhouette_frame_, silhouette_rgb, cv::COLOR_BGR2RGB);
-        
-        // Display silhouette on matrix
-        matrix_.displayFrame(silhouette_rgb.data, width, height, overlay_callback);
-    }
-
-    // Outline frame processing - detect people and draw wireframe outlines
-    void processOutlineFrame(uint8_t *data, int width, int height, 
-                             std::function<void(FrameCanvas*)> overlay_callback = nullptr) {
-        // Convert raw BGR888 data to OpenCV Mat
-        // Note: Camera outputs BGR format (despite being called RGB888)
-        cv::Mat frame_bgr(height, width, CV_8UC3, data);
-        
-        // Apply background subtraction to detect moving objects (people)
-        cv::Mat fg_mask;
-        background_subtractor_->apply(frame_bgr, fg_mask);
-        
-        // Find contours of detected objects
-        std::vector<std::vector<cv::Point>> contours;
-        std::vector<cv::Vec4i> hierarchy;
-        cv::findContours(fg_mask, contours, hierarchy, cv::RETR_EXTERNAL, cv::CHAIN_APPROX_SIMPLE);
-        
-        // Create black outline frame
-        silhouette_frame_ = cv::Mat::zeros(height, width, CV_8UC3);
-        
-        // Filter and draw outlines (only large contours - likely people)
-        const int min_contour_area = 1000;  // Minimum area to consider as a person
-        const int outline_thickness = 2;    // Thickness of outline in pixels
-        
-        for (const auto& contour : contours) {
-            double area = cv::contourArea(contour);
-            if (area > min_contour_area) {
-                // Draw outline only (not filled)
-                cv::drawContours(silhouette_frame_, 
-                                std::vector<std::vector<cv::Point>>{contour}, 
-                                -1, cv::Scalar(255, 255, 255), outline_thickness);
-            }
-        }
-
-        // Convert back to RGB888 for matrix display
-        cv::Mat outline_rgb;
-        cv::cvtColor(silhouette_frame_, outline_rgb, cv::COLOR_BGR2RGB);
-        
-        // Display outline on matrix
-        matrix_.displayFrame(outline_rgb.data, width, height, overlay_callback);
-    }
-
-    // Motion Trails (Ghost Effect) - Variation #3
-    void processMotionTrailsFrame(uint8_t *data, int width, int height, 
-                                  std::function<void(FrameCanvas*)> overlay_callback = nullptr) {
-        // Convert raw BGR888 data to OpenCV Mat
-        // Note: Camera outputs BGR format (despite being called RGB888)
-        cv::Mat frame_bgr(height, width, CV_8UC3, data);
-        
-        // Apply background subtraction to detect moving objects (people)
-        cv::Mat fg_mask;
-        background_subtractor_->apply(frame_bgr, fg_mask);
-        
-        // Find contours of detected objects
-        std::vector<std::vector<cv::Point>> contours;
-        std::vector<cv::Vec4i> hierarchy;
-        cv::findContours(fg_mask, contours, hierarchy, cv::RETR_EXTERNAL, cv::CHAIN_APPROX_SIMPLE);
-        
-        // Fade previous frame to create trailing effect
-        silhouette_frame_ *= trail_alpha_;
-        
-        // Filter and draw silhouettes (only large contours - likely people)
-        const int min_contour_area = 1000;
-        for (const auto& contour : contours) {
-            double area = cv::contourArea(contour);
-            if (area > min_contour_area) {
-                // Draw filled white silhouette on top of faded previous frame
-                cv::drawContours(silhouette_frame_, std::vector<std::vector<cv::Point>>{contour}, 
-                                -1, cv::Scalar(255, 255, 255), cv::FILLED);
-            }
-        }
-
-        // Convert back to RGB888 for matrix display
-        cv::Mat silhouette_rgb;
-        cv::cvtColor(silhouette_frame_, silhouette_rgb, cv::COLOR_BGR2RGB);
-        
-        // Display on matrix
-        matrix_.displayFrame(silhouette_rgb.data, width, height, overlay_callback);
-    }
-
-    // Energy-based Motion - Improved ghost effect with energy system
-    void processEnergyMotionFrame(uint8_t *data, int width, int height, 
-                                  std::function<void(FrameCanvas*)> overlay_callback = nullptr) {
-        // Convert raw BGR888 data to OpenCV Mat
-        // Note: Camera outputs BGR format (despite being called RGB888)
-        cv::Mat frame_bgr(height, width, CV_8UC3, data);
-        
-        // Apply background subtraction to detect moving objects (people)
-        cv::Mat fg_mask;
-        background_subtractor_->apply(frame_bgr, fg_mask);
-        
-        // Find contours of detected objects
-        std::vector<std::vector<cv::Point>> contours;
-        std::vector<cv::Vec4i> hierarchy;
-        cv::findContours(fg_mask, contours, hierarchy, cv::RETR_EXTERNAL, cv::CHAIN_APPROX_SIMPLE);
-        
-        // Apply simple uniform decay - fast and efficient
-        silhouette_frame_ *= 0.92f;  // 8% decay per frame
-        
-        // Draw new silhouettes directly on faded frame
-        const int min_contour_area = 1000;
-        for (const auto& contour : contours) {
-            double area = cv::contourArea(contour);
-            if (area > min_contour_area) {
-                // Draw filled white silhouette at full brightness (overwrites faded areas)
-                cv::drawContours(silhouette_frame_, std::vector<std::vector<cv::Point>>{contour}, 
-                                -1, cv::Scalar(255, 255, 255), cv::FILLED);
-            }
-        }
-
-        // Convert back to RGB888 for matrix display
-        cv::Mat energy_rgb;
-        cv::cvtColor(silhouette_frame_, energy_rgb, cv::COLOR_BGR2RGB);
-        
-        // Display on matrix
-        matrix_.displayFrame(energy_rgb.data, width, height, overlay_callback);
     }
 
     void setupKeyboardInput() {
@@ -337,19 +149,19 @@ private:
                 char key;
                 if (read(STDIN_FILENO, &key, 1) == 1) {
                     if (key == '1') {
-                        display_mode_ = 1;
+                        core_.setDisplayMode(1);
                         std::cout << "Switched to mode 1: Default camera" << std::endl;
                     } else if (key == '2') {
-                        display_mode_ = 2;
+                        core_.setDisplayMode(2);
                         std::cout << "Switched to mode 2: Transformed camera (filled silhouette)" << std::endl;
                     } else if (key == '3') {
-                        display_mode_ = 3;
+                        core_.setDisplayMode(3);
                         std::cout << "Switched to mode 3: Outline only (wireframe)" << std::endl;
                     } else if (key == '4') {
-                        display_mode_ = 4;
+                        core_.setDisplayMode(4);
                         std::cout << "Switched to mode 4: Motion Trails (Ghost Effect)" << std::endl;
                     } else if (key == '5') {
-                        display_mode_ = 5;
+                        core_.setDisplayMode(5);
                         std::cout << "Switched to mode 5: Energy-based Motion" << std::endl;
                     } else if (key == 'd' || key == 'D') {
                         bool new_state = !debug_enabled_.load();
@@ -365,21 +177,10 @@ private:
     MatrixDisplay matrix_;
     DebugOverlay debug_overlay_;
     DebugDataCollector debug_data_collector_;
-    std::atomic<int> display_mode_;  // Thread-safe mode variable
     std::atomic<bool> debug_enabled_;  // Thread-safe debug toggle
-    int width_;
-    int height_;
     struct termios original_termios_;  // For restoring terminal settings
-    
-    // Silhouette processing
-    cv::Ptr<cv::BackgroundSubtractor> background_subtractor_;
-    cv::Mat silhouette_frame_;
-    
-    // Motion Trails parameters
-    float trail_alpha_;
-    
-    // Energy-based Motion parameters
-    float energy_decay_;            // Energy decay factor per frame (0.0-1.0)
+
+    AppCore core_;
 };
 
 void printUsage(const char* program) {

@@ -42,12 +42,11 @@ void MatrixDisplay::displayFrame(uint8_t *data, int width, int height,
             int src_y = (y * height) / matrix_height;
             
             int src_idx = (src_y * width + src_x) * 3;
-            uint8_t r = data[src_idx];
+            // Input is BGR (OpenCV default and our app convention)
+            uint8_t b = data[src_idx];
             uint8_t g = data[src_idx + 1];
-            uint8_t b = data[src_idx + 2];
-
-            // Camera outputs BGR, swap to RGB
-            canvas_->SetPixel(x, y, b, g, r);
+            uint8_t r = data[src_idx + 2];
+            canvas_->SetPixel(x, y, r, g, b);
         }
     }
     

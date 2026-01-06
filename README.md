@@ -112,6 +112,39 @@ The project provides two executables:
 1. **`camera_to_matrix`**: Direct libcamera capture (recommended for best performance)
 2. **`rpicam_to_matrix`**: Reads rpicam-vid output from stdin (useful for comparison/testing)
 
+## Desktop/macOS (software matrix preview)
+
+The effect pipeline is shared in `AppCore` (OpenCV-only), so you can run a **software matrix preview** on a desktop (including macOS) for behavior/performance comparisons.
+
+### Build on macOS
+
+Install dependencies:
+
+```bash
+brew install opencv cmake
+```
+
+Build:
+
+```bash
+cmake -S . -B build -DBUILD_DESKTOP=ON -DBUILD_RPI=OFF
+cmake --build build -j
+```
+
+Run (webcam):
+
+```bash
+./build/desktop_to_matrix --device 0
+```
+
+Run (video file):
+
+```bash
+./build/desktop_to_matrix --video /path/to/video.mp4
+```
+
+Keys: `1-5` switch modes, `q`/`ESC` quit.
+
 ### camera_to_matrix (Direct Capture)
 
 #### Basic Usage
@@ -305,7 +338,7 @@ make
 ### Adding Features
 
 To add new features:
-1. Modify `src/camera_to_matrix.cpp`
+1. Modify `src/app/app_core.cpp` (shared effects/modes)
 2. Rebuild: `make clean && make`
 3. Test with your hardware
 
