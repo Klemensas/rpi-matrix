@@ -31,38 +31,39 @@ static void printUsage(const char* program) {
 }
 
 // Draw debug overlay on OpenCV Mat (desktop version)
+// This is designed to work on matrix-resolution images (e.g., 64x64)
 static void drawDebugOverlay(cv::Mat& frame, double fps, float temperature_celsius) {
     if (frame.empty()) return;
 
-    // Prepare debug text
+    // Prepare debug text - shorter format for small matrix
     std::ostringstream fps_text;
-    fps_text << "FPS: " << std::fixed << std::setprecision(1) << fps;
+    fps_text << std::fixed << std::setprecision(0) << fps;  // Just the number
 
     std::ostringstream temp_text;
-    temp_text << "Temp: " << std::fixed << std::setprecision(1) << temperature_celsius << "C";
+    temp_text << std::fixed << std::setprecision(0) << temperature_celsius << "C";
 
-    // Draw text with background for readability
+    // Use smaller font settings appropriate for matrix resolution
     int font = cv::FONT_HERSHEY_SIMPLEX;
-    double font_scale = 0.5;
+    double font_scale = 0.3;  // Smaller for 64x64 display
     int thickness = 1;
     int baseline = 0;
 
-    // FPS text
+    // FPS text - top left
     cv::Size fps_size = cv::getTextSize(fps_text.str(), font, font_scale, thickness, &baseline);
-    cv::Point fps_pos(5, 15);
+    cv::Point fps_pos(1, fps_size.height + 1);
     cv::rectangle(frame, 
-                  cv::Point(fps_pos.x - 2, fps_pos.y - fps_size.height - 2),
-                  cv::Point(fps_pos.x + fps_size.width + 2, fps_pos.y + baseline + 2),
+                  cv::Point(fps_pos.x - 1, fps_pos.y - fps_size.height - 1),
+                  cv::Point(fps_pos.x + fps_size.width + 1, fps_pos.y + baseline + 1),
                   cv::Scalar(0, 0, 0), -1);  // Black background
     cv::putText(frame, fps_text.str(), fps_pos, font, font_scale, 
-                cv::Scalar(0, 255, 0), thickness);  // Green text
+                cv::Scalar(0, 255, 255), thickness);  // Yellow text
 
-    // Temperature text
+    // Temperature text - below FPS
     cv::Size temp_size = cv::getTextSize(temp_text.str(), font, font_scale, thickness, &baseline);
-    cv::Point temp_pos(5, 35);
+    cv::Point temp_pos(1, fps_pos.y + temp_size.height + 3);
     cv::rectangle(frame,
-                  cv::Point(temp_pos.x - 2, temp_pos.y - temp_size.height - 2),
-                  cv::Point(temp_pos.x + temp_size.width + 2, temp_pos.y + baseline + 2),
+                  cv::Point(temp_pos.x - 1, temp_pos.y - temp_size.height - 1),
+                  cv::Point(temp_pos.x + temp_size.width + 1, temp_pos.y + baseline + 1),
                   cv::Scalar(0, 0, 0), -1);  // Black background
     cv::putText(frame, temp_text.str(), temp_pos, font, font_scale,
                 cv::Scalar(0, 255, 255), thickness);  // Yellow text
@@ -149,12 +150,15 @@ int main(int argc, char *argv[]) {
 
         core.processFrame(frame, out);
 
-        // Draw debug overlay if enabled
-        if (debug_enabled.load() && !out.empty()) {
-            drawDebugOverlay(out, debug.getFPS(), debug.getTemperature());
+        // Create overlay callback if debug is enabled
+        std::function<void(cv::Mat&)> overlay_callback = nullptr;
+        if (debug_enabled.load()) {
+            overlay_callback = [&debug](cv::Mat& matrix_frame) {
+                drawDebugOverlay(matrix_frame, debug.getFPS(), debug.getTemperature());
+            };
         }
 
-        int key = display.displayFrame(out, /*delay_ms=*/1);
+        int key = display.displayFrame(out, /*delay_ms=*/1, overlay_callback);
         if (key == 27 || key == 'q' || key == 'Q') break;
 
         if (key >= '1' && key <= '5') {

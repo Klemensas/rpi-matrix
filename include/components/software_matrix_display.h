@@ -2,6 +2,7 @@
 #define SOFTWARE_MATRIX_DISPLAY_H
 
 #include <string>
+#include <functional>
 #include <opencv2/core.hpp>
 
 // Desktop-only "software matrix" preview.
@@ -16,8 +17,11 @@ public:
     int getHeight() const;
 
     // Show what would be displayed on the matrix.
+    // Optional overlay_callback is called on the matrix-resolution frame (e.g., 64x64)
+    // before upscaling, allowing sharp text/graphics to be drawn.
     // Returns last key pressed from the window (OpenCV waitKey), or -1 if none.
-    int displayFrame(const cv::Mat& bgr, int delay_ms = 1);
+    int displayFrame(const cv::Mat& bgr, int delay_ms = 1, 
+                     std::function<void(cv::Mat&)> overlay_callback = nullptr);
 
 private:
     int rows_;

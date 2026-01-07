@@ -22,11 +22,17 @@ SoftwareMatrixDisplay::SoftwareMatrixDisplay(int rows, int cols, int chain_lengt
 int SoftwareMatrixDisplay::getWidth() const { return matrix_w_; }
 int SoftwareMatrixDisplay::getHeight() const { return matrix_h_; }
 
-int SoftwareMatrixDisplay::displayFrame(const cv::Mat& bgr, int delay_ms) {
+int SoftwareMatrixDisplay::displayFrame(const cv::Mat& bgr, int delay_ms, 
+                                         std::function<void(cv::Mat&)> overlay_callback) {
     if (bgr.empty()) return cv::waitKey(delay_ms);
 
     // Downscale to matrix resolution (what hardware would show)
     cv::resize(bgr, matrix_bgr_, cv::Size(matrix_w_, matrix_h_), 0, 0, cv::INTER_AREA);
+
+    // Draw overlay on matrix-resolution image (before upscaling for sharp text)
+    if (overlay_callback) {
+        overlay_callback(matrix_bgr_);
+    }
 
     // Upscale for viewing (nearest neighbor so it looks pixelated like LEDs)
     cv::resize(matrix_bgr_, preview_bgr_, cv::Size(matrix_w_ * 10, matrix_h_ * 10), 0, 0, cv::INTER_NEAREST);
