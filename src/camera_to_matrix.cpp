@@ -35,12 +35,13 @@ public:
                    int chain_length = 1, int parallel = 1,
                    const std::string& hardware_mapping = "regular",
                    int brightness = 50, int gpio_slowdown = 4,
-                   int pwm_bits = 11, int pwm_lsb_nanoseconds = 130,
+                   int pwm_bits = 11, int pwm_dither_bits = 0,
+                   int pwm_lsb_nanoseconds = 130,
                    int limit_refresh_rate_hz = 0)
         : camera_(width, height),
           matrix_(rows, cols, chain_length, parallel, hardware_mapping,
-                  brightness, gpio_slowdown, pwm_bits, pwm_lsb_nanoseconds,
-                  limit_refresh_rate_hz),
+                  brightness, gpio_slowdown, pwm_bits, pwm_dither_bits,
+                  pwm_lsb_nanoseconds, limit_refresh_rate_hz),
           debug_overlay_(),
           debug_data_collector_(),
           debug_enabled_(true),
@@ -207,6 +208,8 @@ void printUsage(const char* program) {
               << "  --led-slowdown-gpio N          GPIO slowdown for stability (default: 4, try 2-4)\n"
               << "  --led-pwm-bits N               PWM bits for color depth (default: 11, range: 1-11)\n"
               << "                                 Lower values = less CPU, higher refresh rate, fewer colors\n"
+              << "  --led-pwm-dither-bits N        Dither bits for temporal dithering (default: 0, range: 0-2)\n"
+              << "                                 Time-dithering of lower bits for smoother color\n"
               << "  --led-pwm-lsb-nanoseconds N    PWM LSB nanoseconds (default: 130, range: 50-3000)\n"
               << "                                 Lower values = higher refresh rate, more ghosting\n"
               << "  --led-limit-refresh N          Limit refresh rate to N Hz (default: 0 = no limit)\n"
@@ -231,6 +234,7 @@ int main(int argc, char *argv[]) {
     int brightness = 50;
     int gpio_slowdown = 4;
     int pwm_bits = 11;
+    int pwm_dither_bits = 0;
     int pwm_lsb_nanoseconds = 130;
     int limit_refresh_rate_hz = 0;
 
@@ -259,6 +263,8 @@ int main(int argc, char *argv[]) {
             gpio_slowdown = std::atoi(argv[++i]);
         } else if (strcmp(argv[i], "--led-pwm-bits") == 0 && i + 1 < argc) {
             pwm_bits = std::atoi(argv[++i]);
+        } else if (strcmp(argv[i], "--led-pwm-dither-bits") == 0 && i + 1 < argc) {
+            pwm_dither_bits = std::atoi(argv[++i]);
         } else if (strcmp(argv[i], "--led-pwm-lsb-nanoseconds") == 0 && i + 1 < argc) {
             pwm_lsb_nanoseconds = std::atoi(argv[++i]);
         } else if (strcmp(argv[i], "--led-limit-refresh") == 0 && i + 1 < argc) {
@@ -280,6 +286,7 @@ int main(int argc, char *argv[]) {
     std::cout << "Hardware mapping: " << hardware_mapping << std::endl;
     std::cout << "Display settings: brightness=" << brightness
               << ", pwm-bits=" << pwm_bits
+              << ", pwm-dither=" << pwm_dither_bits
               << ", pwm-lsb-ns=" << pwm_lsb_nanoseconds << std::endl;
     std::cout << "Performance: gpio-slowdown=" << gpio_slowdown;
     if (limit_refresh_rate_hz > 0) {
@@ -290,7 +297,8 @@ int main(int argc, char *argv[]) {
 
     CameraToMatrix app(width, height, rows, cols, chain_length, parallel, 
                        hardware_mapping, brightness, gpio_slowdown,
-                       pwm_bits, pwm_lsb_nanoseconds, limit_refresh_rate_hz);
+                       pwm_bits, pwm_dither_bits, pwm_lsb_nanoseconds, 
+                       limit_refresh_rate_hz);
     app.run();
 
     std::cout << "Exiting..." << std::endl;
