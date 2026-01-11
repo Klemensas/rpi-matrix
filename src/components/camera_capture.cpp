@@ -51,20 +51,17 @@ void CameraCapture::start() {
     // Set stream format
     StreamConfiguration &streamConfig = config->at(0);
     
-    // If sensor resolution is specified, request that size first (for FOV control)
-    // Otherwise use output resolution and let libcamera pick the sensor mode
-    if (sensor_width_ > 0 && sensor_height_ > 0) {
-        streamConfig.size.width = sensor_width_;
-        streamConfig.size.height = sensor_height_;
-        std::cout << "Requesting sensor capture: " << sensor_width_ << "x" << sensor_height_ << std::endl;
-    } else {
-        streamConfig.size.width = width_;
-        streamConfig.size.height = height_;
-    }
+    // Always configure stream at the desired OUTPUT resolution
+    streamConfig.size.width = width_;
+    streamConfig.size.height = height_;
     streamConfig.pixelFormat = formats::RGB888;
     streamConfig.bufferCount = 6;  // More buffers helps sustain higher FPS
     
     std::cout << "Requesting output stream: " << width_ << "x" << height_ << " (RGB888)" << std::endl;
+    if (sensor_width_ > 0 && sensor_height_ > 0) {
+        std::cout << "Will request sensor mode ~" << sensor_width_ << "x" << sensor_height_ 
+                  << " via ScalerCrop for FOV control" << std::endl;
+    }
     std::cout << "Requesting ~120fps via FrameDurationLimits (8333us)" << std::endl;
     
     config->validate();
@@ -95,6 +92,26 @@ void CameraCapture::start() {
         return;
     }
 
+    // Use ScalerCrop to control FOV
+    // ScalerCrop specifies which part of the sensor's active area to use
+    // FULL sensor = widest FOV, cropped = narrower FOV
+    Rectangle scaler_crop;
+    bool use_scaler_crop = false;
+    
+    if (sensor_width_ > 0 && sensor_height_ > 0) {
+        const auto &sensorSize = camera_->properties().get(properties::PixelArraySize);
+        if (sensorSize) {
+            Size sensor_full = *sensorSize;
+            
+            // Use the FULL sensor active area for widest FOV
+            // Libcamera will pick a sensor mode that covers this area and scale down
+            scaler_crop = Rectangle(0, 0, sensor_full.width, sensor_full.height);
+            use_scaler_crop = true;
+            std::cout << "Setting ScalerCrop to FULL sensor: " << scaler_crop.toString() 
+                      << " for maximum FOV" << std::endl;
+        }
+    }
+
     // Create and queue requests
     for (const StreamConfiguration &cfg : *config) {
         const std::vector<std::unique_ptr<FrameBuffer>> &buffers = allocator_->buffers(cfg.stream());
@@ -117,6 +134,11 @@ void CameraCapture::start() {
             // Note: If exposure exceeds this, the camera may still not reach 120 fps in low light.
             const std::array<int64_t, 2> frame_duration_limits = {8333, 8333};
             request->controls().set(controls::FrameDurationLimits, frame_duration_limits);
+            
+            // Set ScalerCrop to control sensor mode / FOV
+            if (use_scaler_crop) {
+                request->controls().set(controls::ScalerCrop, scaler_crop);
+            }
 
             camera_->queueRequest(request.release());
         }

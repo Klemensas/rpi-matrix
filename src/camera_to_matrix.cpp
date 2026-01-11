@@ -5,7 +5,6 @@
 #include "app/app_core.h"
 #include <led-matrix.h>
 #include <opencv2/core.hpp>
-#include <opencv2/imgproc.hpp>
 #include <iostream>
 #include <csignal>
 #include <cstring>
@@ -47,9 +46,6 @@ public:
           debug_overlay_(),
           debug_data_collector_(),
           debug_enabled_(true),
-          output_width_(width),
-          output_height_(height),
-          needs_scaling_(sensor_width > 0 && sensor_height > 0),
           core_(width, height, chain_length) {}
 
     void run() {
@@ -130,15 +126,8 @@ private:
         
         // libcamera stream is configured as RGB888, but in practice is BGR byte-order in this pipeline.
         // Treat input as BGR consistently with OpenCV.
+        // Note: If sensor mode was specified, libcamera's ISP handles scaling (hardware-accelerated)
         cv::Mat in_bgr(height, width, CV_8UC3, data);
-        
-        // Scale to output resolution if sensor capture resolution differs (FOV control)
-        if (needs_scaling_) {
-            cv::Mat scaled;
-            cv::resize(in_bgr, scaled, cv::Size(output_width_, output_height_), 0, 0, cv::INTER_LINEAR);
-            in_bgr = scaled;
-        }
-        
         cv::Mat out_bgr;
         core_.processFrame(in_bgr, out_bgr);
         if (!out_bgr.empty()) {
@@ -268,11 +257,6 @@ private:
     DebugDataCollector debug_data_collector_;
     std::atomic<bool> debug_enabled_;  // Thread-safe debug toggle
     struct termios original_termios_;  // For restoring terminal settings
-    
-    // Sensor mode / scaling
-    int output_width_;
-    int output_height_;
-    bool needs_scaling_;
     
     AppCore core_;
     
