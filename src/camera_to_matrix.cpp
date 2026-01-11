@@ -45,7 +45,7 @@ public:
           debug_overlay_(),
           debug_data_collector_(),
           debug_enabled_(true),
-          core_(width, height) {}
+          core_(width, height, chain_length) {}
 
     void run() {
         if (geteuid() == 0) {
@@ -76,8 +76,21 @@ public:
         std::cout << "  3 - Outline only (wireframe)" << std::endl;
         std::cout << "  4 - Motion Trails (Ghost Effect)" << std::endl;
         std::cout << "  5 - Energy-based Motion (movement adds energy, decays over time)" << std::endl;
+        std::cout << "\nMulti-Panel Mode (independent of display modes):" << std::endl;
+        int num_panels = core_.getNumPanels();
+        if (num_panels > 1) {
+            std::cout << "  § - Toggle multi-panel mode and cycle target (P1";
+            for (int i = 2; i <= num_panels; i++) {
+                std::cout << " -> P" << i;
+            }
+            std::cout << " -> All -> Off)" << std::endl;
+            std::cout << "      When enabled, 1-5 keys apply effects to targeted panel(s)" << std::endl;
+        } else {
+            std::cout << "  (Multi-panel mode requires --led-chain > 1)" << std::endl;
+        }
+        std::cout << "\nOther controls:" << std::endl;
         std::cout << "  d - Toggle debug info (FPS and CPU temperature)" << std::endl;
-        std::cout << "Press 1-5 or d to switch modes, Ctrl+C to stop" << std::endl;
+        std::cout << "Press 1-5, §, or d; Ctrl+C to stop" << std::endl;
 
         // Keep running until interrupted
         while (running) {
@@ -154,21 +167,78 @@ private:
             if (FD_ISSET(STDIN_FILENO, &readfds)) {
                 char key;
                 if (read(STDIN_FILENO, &key, 1) == 1) {
-                    if (key == '1') {
-                        core_.setDisplayMode(1);
-                        std::cout << "Switched to mode 1: Default camera" << std::endl;
-                    } else if (key == '2') {
-                        core_.setDisplayMode(2);
-                        std::cout << "Switched to mode 2: Transformed camera (filled silhouette)" << std::endl;
-                    } else if (key == '3') {
-                        core_.setDisplayMode(3);
-                        std::cout << "Switched to mode 3: Outline only (wireframe)" << std::endl;
-                    } else if (key == '4') {
-                        core_.setDisplayMode(4);
-                        std::cout << "Switched to mode 4: Motion Trails (Ghost Effect)" << std::endl;
-                    } else if (key == '5') {
-                        core_.setDisplayMode(5);
-                        std::cout << "Switched to mode 5: Energy-based Motion" << std::endl;
+                    bool in_multi_panel = multi_panel_enabled_.load();
+                    
+                    // § key (section sign, 0xC2 0xA7 in UTF-8)
+                    if (key == static_cast<char>(0xC2)) {
+                        // Read next byte for UTF-8 multi-byte character
+                        char key2;
+                        if (read(STDIN_FILENO, &key2, 1) == 1 && key2 == static_cast<char>(0xA7)) {
+                            int num_panels = core_.getNumPanels();
+                            
+                            if (!in_multi_panel) {
+                                // Enter multi-panel mode, target Panel 1
+                                // Initialize all panels to the current display mode
+                                int current_mode = core_.displayMode();
+                                for (int i = 0; i < num_panels; i++) {
+                                    core_.setPanelEffect(i, current_mode);
+                                }
+                                multi_panel_enabled_ = true;
+                                core_.setMultiPanelEnabled(true);
+                                panel_target_ = 0;
+                                std::cout << "Multi-Panel Mode ENABLED - Target: Panel 1" << std::endl;
+                                std::cout << "(All panels start with current mode " << current_mode << ")" << std::endl;
+                            } else {
+                                // Cycle through targets: 0 (P1) -> ... -> (Pn) -> -1 (all) -> off
+                                int current_target = panel_target_.load();
+                                
+                                if (current_target == -1) {
+                                    // After "all", disable multi-panel mode
+                                    multi_panel_enabled_ = false;
+                                    core_.setMultiPanelEnabled(false);
+                                    std::cout << "Multi-Panel Mode DISABLED" << std::endl;
+                                } else if (current_target == num_panels - 1) {
+                                    // After last panel, go to "all"
+                                    panel_target_ = -1;
+                                    std::cout << "Target: All panels" << std::endl;
+                                } else {
+                                    // Go to next panel
+                                    panel_target_ = current_target + 1;
+                                    std::cout << "Target: Panel " << (current_target + 2) << std::endl;
+                                }
+                            }
+                        }
+                    } else if (key >= '1' && key <= '5') {
+                        int effect = key - '0';
+                        
+                        if (in_multi_panel) {
+                            // Apply effect to current target panel(s)
+                            int target = panel_target_.load();
+                            int num_panels = core_.getNumPanels();
+                            if (target == -1) {
+                                // Apply to all panels
+                                for (int i = 0; i < num_panels; i++) {
+                                    core_.setPanelEffect(i, effect);
+                                }
+                                std::cout << "Applied effect " << effect << " to all panels" << std::endl;
+                            } else {
+                                // Apply to specific panel
+                                core_.setPanelEffect(target, effect);
+                                std::cout << "Applied effect " << effect << " to Panel " << (target + 1) << std::endl;
+                            }
+                        } else {
+                            // Regular mode switching (affects all panels uniformly)
+                            core_.setDisplayMode(effect);
+                            const char* mode_names[] = {
+                                "",
+                                "Default camera",
+                                "Transformed camera (filled silhouette)",
+                                "Outline only (wireframe)",
+                                "Motion Trails (Ghost Effect)",
+                                "Energy-based Motion"
+                            };
+                            std::cout << "Switched to mode " << effect << ": " << mode_names[effect] << std::endl;
+                        }
                     } else if (key == 'd' || key == 'D') {
                         bool new_state = !debug_enabled_.load();
                         debug_enabled_ = new_state;
@@ -187,6 +257,10 @@ private:
     struct termios original_termios_;  // For restoring terminal settings
     
     AppCore core_;
+    
+    // Multi-panel state: independent of display modes
+    std::atomic<bool> multi_panel_enabled_{false};
+    std::atomic<int> panel_target_{0};  // 0/1/2 = specific panel, -1 = all panels
 };
 
 void printUsage(const char* program) {

@@ -126,7 +126,7 @@ int main(int argc, char *argv[]) {
     cap.set(cv::CAP_PROP_FRAME_WIDTH, width);
     cap.set(cv::CAP_PROP_FRAME_HEIGHT, height);
 
-    AppCore core(width, height);
+    AppCore core(width, height, chain_length);
     DebugDataCollector debug;
     SoftwareMatrixDisplay display(rows, cols, chain_length, parallel);
     std::atomic<bool> debug_enabled(true);
