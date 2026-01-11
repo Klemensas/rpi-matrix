@@ -23,7 +23,7 @@ public:
     RpicamToMatrix(int rows, int cols, 
                    int chain_length = 1, int parallel = 1,
                    const std::string& hardware_mapping = "regular",
-                   int brightness = 50, int gpio_slowdown = 4,
+                   int brightness = 50, int gpio_slowdown = 3,
                    int pwm_bits = 11, int pwm_lsb_nanoseconds = 130,
                    int limit_refresh_rate_hz = 0)
         : rows_(rows), cols_(cols),
