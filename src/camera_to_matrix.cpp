@@ -33,9 +33,14 @@ class CameraToMatrix {
 public:
     CameraToMatrix(int width, int height, int rows, int cols, 
                    int chain_length = 1, int parallel = 1,
-                   const std::string& hardware_mapping = "regular")
+                   const std::string& hardware_mapping = "regular",
+                   int brightness = 50, int gpio_slowdown = 4,
+                   int pwm_bits = 11, int pwm_lsb_nanoseconds = 130,
+                   int limit_refresh_rate_hz = 0)
         : camera_(width, height),
-          matrix_(rows, cols, chain_length, parallel, hardware_mapping),
+          matrix_(rows, cols, chain_length, parallel, hardware_mapping,
+                  brightness, gpio_slowdown, pwm_bits, pwm_lsb_nanoseconds,
+                  limit_refresh_rate_hz),
           debug_overlay_(),
           debug_data_collector_(),
           debug_enabled_(true),
@@ -186,14 +191,27 @@ private:
 void printUsage(const char* program) {
     std::cout << "Usage: " << program << " [options]\n"
               << "Options:\n"
-              << "  --width WIDTH          Camera capture width (default: 640)\n"
-              << "  --height HEIGHT        Camera capture height (default: 480)\n"
-              << "  --rows ROWS            Matrix rows per panel (default: 64)\n"
-              << "  --cols COLS            Matrix columns per panel (default: 64)\n"
-              << "  --chain CHAIN          Number of chained matrices (default: 1)\n"
-              << "  --parallel PARALLEL    Number of parallel chains (default: 1)\n"
-              << "  --hardware-mapping MAP Hardware mapping: regular, adafruit-hat, adafruit-hat-pwm (default: regular)\n"
-              << "  --help                 Show this help message\n"
+              << "Camera options:\n"
+              << "  --width WIDTH                  Camera capture width (default: 640)\n"
+              << "  --height HEIGHT                Camera capture height (default: 480)\n"
+              << "\n"
+              << "Matrix configuration:\n"
+              << "  --led-rows ROWS                Matrix rows per panel (default: 64)\n"
+              << "  --led-cols COLS                Matrix columns per panel (default: 64)\n"
+              << "  --led-chain CHAIN              Number of chained matrices (default: 1)\n"
+              << "  --led-parallel PARALLEL        Number of parallel chains (default: 1)\n"
+              << "  --led-hardware-mapping MAP     Hardware mapping: regular, adafruit-hat, adafruit-hat-pwm (default: regular)\n"
+              << "\n"
+              << "Matrix performance tuning:\n"
+              << "  --led-brightness N             LED brightness 0-100 (default: 50)\n"
+              << "  --led-slowdown-gpio N          GPIO slowdown for stability (default: 4, try 2-4)\n"
+              << "  --led-pwm-bits N               PWM bits for color depth (default: 11, range: 1-11)\n"
+              << "                                 Lower values = less CPU, higher refresh rate, fewer colors\n"
+              << "  --led-pwm-lsb-nanoseconds N    PWM LSB nanoseconds (default: 130, range: 50-3000)\n"
+              << "                                 Lower values = higher refresh rate, more ghosting\n"
+              << "  --led-limit-refresh N          Limit refresh rate to N Hz (default: 0 = no limit)\n"
+              << "\n"
+              << "  --help                         Show this help message\n"
               << std::endl;
 }
 
@@ -210,6 +228,11 @@ int main(int argc, char *argv[]) {
     int chain_length = 1;
     int parallel = 1;
     std::string hardware_mapping = "regular";
+    int brightness = 50;
+    int gpio_slowdown = 4;
+    int pwm_bits = 11;
+    int pwm_lsb_nanoseconds = 130;
+    int limit_refresh_rate_hz = 0;
 
     // Parse command line arguments
     for (int i = 1; i < argc; i++) {
@@ -220,16 +243,26 @@ int main(int argc, char *argv[]) {
             width = std::atoi(argv[++i]);
         } else if (strcmp(argv[i], "--height") == 0 && i + 1 < argc) {
             height = std::atoi(argv[++i]);
-        } else if (strcmp(argv[i], "--rows") == 0 && i + 1 < argc) {
+        } else if (strcmp(argv[i], "--led-rows") == 0 && i + 1 < argc) {
             rows = std::atoi(argv[++i]);
-        } else if (strcmp(argv[i], "--cols") == 0 && i + 1 < argc) {
+        } else if (strcmp(argv[i], "--led-cols") == 0 && i + 1 < argc) {
             cols = std::atoi(argv[++i]);
-        } else if (strcmp(argv[i], "--chain") == 0 && i + 1 < argc) {
+        } else if (strcmp(argv[i], "--led-chain") == 0 && i + 1 < argc) {
             chain_length = std::atoi(argv[++i]);
-        } else if (strcmp(argv[i], "--parallel") == 0 && i + 1 < argc) {
+        } else if (strcmp(argv[i], "--led-parallel") == 0 && i + 1 < argc) {
             parallel = std::atoi(argv[++i]);
-        } else if (strcmp(argv[i], "--hardware-mapping") == 0 && i + 1 < argc) {
+        } else if (strcmp(argv[i], "--led-hardware-mapping") == 0 && i + 1 < argc) {
             hardware_mapping = argv[++i];
+        } else if (strcmp(argv[i], "--led-brightness") == 0 && i + 1 < argc) {
+            brightness = std::atoi(argv[++i]);
+        } else if (strcmp(argv[i], "--led-slowdown-gpio") == 0 && i + 1 < argc) {
+            gpio_slowdown = std::atoi(argv[++i]);
+        } else if (strcmp(argv[i], "--led-pwm-bits") == 0 && i + 1 < argc) {
+            pwm_bits = std::atoi(argv[++i]);
+        } else if (strcmp(argv[i], "--led-pwm-lsb-nanoseconds") == 0 && i + 1 < argc) {
+            pwm_lsb_nanoseconds = std::atoi(argv[++i]);
+        } else if (strcmp(argv[i], "--led-limit-refresh") == 0 && i + 1 < argc) {
+            limit_refresh_rate_hz = std::atoi(argv[++i]);
         } else {
             std::cerr << "Unknown option: " << argv[i] << std::endl;
             printUsage(argv[0]);
@@ -245,9 +278,19 @@ int main(int argc, char *argv[]) {
               << ", chain=" << chain_length 
               << ", parallel=" << parallel << std::endl;
     std::cout << "Hardware mapping: " << hardware_mapping << std::endl;
+    std::cout << "Display settings: brightness=" << brightness
+              << ", pwm-bits=" << pwm_bits
+              << ", pwm-lsb-ns=" << pwm_lsb_nanoseconds << std::endl;
+    std::cout << "Performance: gpio-slowdown=" << gpio_slowdown;
+    if (limit_refresh_rate_hz > 0) {
+        std::cout << ", refresh-limit=" << limit_refresh_rate_hz << "Hz";
+    }
+    std::cout << std::endl;
     std::cout << "=" << std::string(60, '=') << std::endl;
 
-    CameraToMatrix app(width, height, rows, cols, chain_length, parallel, hardware_mapping);
+    CameraToMatrix app(width, height, rows, cols, chain_length, parallel, 
+                       hardware_mapping, brightness, gpio_slowdown,
+                       pwm_bits, pwm_lsb_nanoseconds, limit_refresh_rate_hz);
     app.run();
 
     std::cout << "Exiting..." << std::endl;

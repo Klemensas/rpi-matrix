@@ -6,9 +6,15 @@ using rgb_matrix::RuntimeOptions;
 using rgb_matrix::FrameCanvas;
 
 MatrixDisplay::MatrixDisplay(int rows, int cols, int chain_length, int parallel,
-                             const std::string& hardware_mapping)
+                             const std::string& hardware_mapping,
+                             int brightness, int gpio_slowdown,
+                             int pwm_bits, int pwm_lsb_nanoseconds,
+                             int limit_refresh_rate_hz)
     : rows_(rows), cols_(cols), chain_length_(chain_length), 
       parallel_(parallel), hardware_mapping_(hardware_mapping),
+      brightness_(brightness), gpio_slowdown_(gpio_slowdown),
+      pwm_bits_(pwm_bits), pwm_lsb_nanoseconds_(pwm_lsb_nanoseconds),
+      limit_refresh_rate_hz_(limit_refresh_rate_hz),
       matrix_(nullptr), canvas_(nullptr) {
     setup();
 }
@@ -65,12 +71,16 @@ void MatrixDisplay::setup() {
     options.chain_length = chain_length_;
     options.parallel = parallel_;
     options.hardware_mapping = hardware_mapping_.c_str();
-    options.brightness = 50;
+    options.brightness = brightness_;
+    options.pwm_bits = pwm_bits_;
+    options.pwm_lsb_nanoseconds = pwm_lsb_nanoseconds_;
+    options.limit_refresh_rate_hz = limit_refresh_rate_hz_;
     options.disable_hardware_pulsing = true;
+    options.show_refresh_rate = true;
     
     RuntimeOptions runtime_options;
     runtime_options.drop_privileges = 0;
-    runtime_options.gpio_slowdown = 4;
+    runtime_options.gpio_slowdown = gpio_slowdown_;
     
     matrix_ = RGBMatrix::CreateFromOptions(options, runtime_options);
     if (matrix_) {

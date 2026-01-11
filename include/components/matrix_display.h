@@ -11,7 +11,10 @@ using rgb_matrix::FrameCanvas;
 class MatrixDisplay {
 public:
     MatrixDisplay(int rows, int cols, int chain_length = 1, int parallel = 1,
-                  const std::string& hardware_mapping = "regular");
+                  const std::string& hardware_mapping = "regular",
+                  int brightness = 50, int gpio_slowdown = 4,
+                  int pwm_bits = 11, int pwm_lsb_nanoseconds = 130,
+                  int limit_refresh_rate_hz = 0);
     ~MatrixDisplay();
 
     bool isReady() const;
@@ -32,6 +35,11 @@ private:
     int chain_length_;
     int parallel_;
     std::string hardware_mapping_;
+    int brightness_;
+    int gpio_slowdown_;
+    int pwm_bits_;
+    int pwm_lsb_nanoseconds_;
+    int limit_refresh_rate_hz_;
     RGBMatrix *matrix_;
     FrameCanvas *canvas_;
 };
