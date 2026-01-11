@@ -75,7 +75,7 @@ void MatrixDisplay::setup() {
     options.pwm_bits = pwm_bits_;
     options.pwm_lsb_nanoseconds = pwm_lsb_nanoseconds_;
     options.limit_refresh_rate_hz = limit_refresh_rate_hz_;
-    options.disable_hardware_pulsing = true;
+    options.disable_hardware_pulsing = false;
     options.show_refresh_rate = true;
     
     RuntimeOptions runtime_options;

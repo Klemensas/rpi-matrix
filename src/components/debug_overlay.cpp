@@ -58,7 +58,7 @@ void DebugOverlay::draw(FrameCanvas *canvas, double fps, float temperature_celsi
     
     // Prepare text strings - use shorter format
     std::ostringstream fps_stream;
-    fps_stream << std::fixed << std::setprecision(0) << fps;  // No decimal, no "fps" label
+    fps_stream << std::fixed << std::setprecision(0) << fps << "fps";
     
     std::ostringstream temp_stream;
     temp_stream << std::fixed << std::setprecision(0) << temperature_celsius << "C";  // No degree symbol, shorter

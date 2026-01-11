@@ -75,7 +75,7 @@ public:
         std::cout << "  3 - Outline only (wireframe)" << std::endl;
         std::cout << "  4 - Motion Trails (Ghost Effect)" << std::endl;
         std::cout << "  5 - Energy-based Motion (movement adds energy, decays over time)" << std::endl;
-        std::cout << "  d - Toggle debug info (FPS and temperature)" << std::endl;
+        std::cout << "  d - Toggle debug info (FPS and CPU temperature)" << std::endl;
         std::cout << "Press 1-5 or d to switch modes, Ctrl+C to stop" << std::endl;
 
         // Keep running until interrupted
@@ -108,7 +108,7 @@ private:
                                    debug_data_collector_.getTemperature());
             };
         }
-
+        
         // libcamera stream is configured as RGB888, but in practice is BGR byte-order in this pipeline.
         // Treat input as BGR consistently with OpenCV.
         cv::Mat in_bgr(height, width, CV_8UC3, data);
@@ -184,7 +184,7 @@ private:
     DebugDataCollector debug_data_collector_;
     std::atomic<bool> debug_enabled_;  // Thread-safe debug toggle
     struct termios original_termios_;  // For restoring terminal settings
-
+    
     AppCore core_;
 };
 
