@@ -14,7 +14,7 @@ using namespace libcamera;
 
 class CameraCapture {
 public:
-    CameraCapture(int width, int height);
+    CameraCapture(int width, int height, int sensor_width = 0, int sensor_height = 0);
     ~CameraCapture();
 
     bool isReady() const;
@@ -30,8 +30,10 @@ private:
     void processRequest(Request *request);
     void cleanup();
 
-    int width_;
+    int width_;          // Output resolution (after ISP scaling)
     int height_;
+    int sensor_width_;   // Requested sensor capture resolution (0 = auto)
+    int sensor_height_;
     int actual_width_;   // Actual camera stream width
     int actual_height_;  // Actual camera stream height
     std::unique_ptr<CameraManager> camera_manager_;

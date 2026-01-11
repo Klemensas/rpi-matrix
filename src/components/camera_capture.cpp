@@ -8,8 +8,10 @@
 // External running flag (defined in main)
 extern volatile bool running;
 
-CameraCapture::CameraCapture(int width, int height) 
-    : width_(width), height_(height), actual_width_(0), actual_height_(0),
+CameraCapture::CameraCapture(int width, int height, int sensor_width, int sensor_height) 
+    : width_(width), height_(height), 
+      sensor_width_(sensor_width), sensor_height_(sensor_height),
+      actual_width_(0), actual_height_(0),
       allocator_(nullptr), frame_callback_connected_(false) {
     setup();
 }
@@ -49,11 +51,16 @@ void CameraCapture::start() {
     // Set stream format
     StreamConfiguration &streamConfig = config->at(0);
     
-    // Request the output resolution the app asked for.
-    // libcamera will still select an internal sensor mode (often 1536x864 for 120fps on IMX708)
-    // and scale to this size in the ISP.
-    streamConfig.size.width = width_;
-    streamConfig.size.height = height_;
+    // If sensor resolution is specified, request that size first (for FOV control)
+    // Otherwise use output resolution and let libcamera pick the sensor mode
+    if (sensor_width_ > 0 && sensor_height_ > 0) {
+        streamConfig.size.width = sensor_width_;
+        streamConfig.size.height = sensor_height_;
+        std::cout << "Requesting sensor capture: " << sensor_width_ << "x" << sensor_height_ << std::endl;
+    } else {
+        streamConfig.size.width = width_;
+        streamConfig.size.height = height_;
+    }
     streamConfig.pixelFormat = formats::RGB888;
     streamConfig.bufferCount = 6;  // More buffers helps sustain higher FPS
     

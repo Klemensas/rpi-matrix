@@ -5,6 +5,7 @@
 #include "app/app_core.h"
 #include <led-matrix.h>
 #include <opencv2/core.hpp>
+#include <opencv2/imgproc.hpp>
 #include <iostream>
 #include <csignal>
 #include <cstring>
@@ -37,14 +38,18 @@ public:
                    int brightness = 50, int gpio_slowdown = 4,
                    int pwm_bits = 11, int pwm_dither_bits = 0,
                    int pwm_lsb_nanoseconds = 130,
-                   int limit_refresh_rate_hz = 0)
-        : camera_(width, height),
+                   int limit_refresh_rate_hz = 0,
+                   int sensor_width = 0, int sensor_height = 0)
+        : camera_(width, height, sensor_width, sensor_height),
           matrix_(rows, cols, chain_length, parallel, hardware_mapping,
                   brightness, gpio_slowdown, pwm_bits, pwm_dither_bits,
                   pwm_lsb_nanoseconds, limit_refresh_rate_hz),
           debug_overlay_(),
           debug_data_collector_(),
           debug_enabled_(true),
+          output_width_(width),
+          output_height_(height),
+          needs_scaling_(sensor_width > 0 && sensor_height > 0),
           core_(width, height, chain_length) {}
 
     void run() {
@@ -126,6 +131,14 @@ private:
         // libcamera stream is configured as RGB888, but in practice is BGR byte-order in this pipeline.
         // Treat input as BGR consistently with OpenCV.
         cv::Mat in_bgr(height, width, CV_8UC3, data);
+        
+        // Scale to output resolution if sensor capture resolution differs (FOV control)
+        if (needs_scaling_) {
+            cv::Mat scaled;
+            cv::resize(in_bgr, scaled, cv::Size(output_width_, output_height_), 0, 0, cv::INTER_LINEAR);
+            in_bgr = scaled;
+        }
+        
         cv::Mat out_bgr;
         core_.processFrame(in_bgr, out_bgr);
         if (!out_bgr.empty()) {
@@ -256,6 +269,11 @@ private:
     std::atomic<bool> debug_enabled_;  // Thread-safe debug toggle
     struct termios original_termios_;  // For restoring terminal settings
     
+    // Sensor mode / scaling
+    int output_width_;
+    int output_height_;
+    bool needs_scaling_;
+    
     AppCore core_;
     
     // Multi-panel state: independent of display modes
@@ -267,8 +285,12 @@ void printUsage(const char* program) {
     std::cout << "Usage: " << program << " [options]\n"
               << "Options:\n"
               << "Camera options:\n"
-              << "  --width WIDTH                  Camera capture width (default: 640)\n"
-              << "  --height HEIGHT                Camera capture height (default: 480)\n"
+              << "  --width WIDTH                  Output width for processing (default: 640)\n"
+              << "  --height HEIGHT                Output height for processing (default: 480)\n"
+              << "  --sensor-width WIDTH           Sensor capture width for FOV control (default: auto)\n"
+              << "                                 Larger = wider field of view (less zoom)\n"
+              << "                                 e.g., --sensor-width 2304 --sensor-height 1296\n"
+              << "  --sensor-height HEIGHT         Sensor capture height for FOV control (default: auto)\n"
               << "\n"
               << "Matrix configuration:\n"
               << "  --led-rows ROWS                Matrix rows per panel (default: 64)\n"
@@ -300,6 +322,8 @@ int main(int argc, char *argv[]) {
     // Default parameters
     int width = 640;
     int height = 480;
+    int sensor_width = 0;  // 0 = auto
+    int sensor_height = 0;
     int rows = 64;
     int cols = 64;
     int chain_length = 1;
@@ -321,6 +345,10 @@ int main(int argc, char *argv[]) {
             width = std::atoi(argv[++i]);
         } else if (strcmp(argv[i], "--height") == 0 && i + 1 < argc) {
             height = std::atoi(argv[++i]);
+        } else if (strcmp(argv[i], "--sensor-width") == 0 && i + 1 < argc) {
+            sensor_width = std::atoi(argv[++i]);
+        } else if (strcmp(argv[i], "--sensor-height") == 0 && i + 1 < argc) {
+            sensor_height = std::atoi(argv[++i]);
         } else if (strcmp(argv[i], "--led-rows") == 0 && i + 1 < argc) {
             rows = std::atoi(argv[++i]);
         } else if (strcmp(argv[i], "--led-cols") == 0 && i + 1 < argc) {
@@ -353,7 +381,11 @@ int main(int argc, char *argv[]) {
     std::cout << "=" << std::string(60, '=') << std::endl;
     std::cout << "Camera to LED Matrix Display" << std::endl;
     std::cout << "=" << std::string(60, '=') << std::endl;
-    std::cout << "Camera resolution: " << width << "x" << height << std::endl;
+    std::cout << "Output resolution: " << width << "x" << height << std::endl;
+    if (sensor_width > 0 && sensor_height > 0) {
+        std::cout << "Sensor capture: " << sensor_width << "x" << sensor_height 
+                  << " (for FOV control, will scale to output)" << std::endl;
+    }
     std::cout << "Matrix: " << cols << "x" << rows 
               << ", chain=" << chain_length 
               << ", parallel=" << parallel << std::endl;
@@ -372,7 +404,7 @@ int main(int argc, char *argv[]) {
     CameraToMatrix app(width, height, rows, cols, chain_length, parallel, 
                        hardware_mapping, brightness, gpio_slowdown,
                        pwm_bits, pwm_dither_bits, pwm_lsb_nanoseconds, 
-                       limit_refresh_rate_hz);
+                       limit_refresh_rate_hz, sensor_width, sensor_height);
     app.run();
 
     std::cout << "Exiting..." << std::endl;
