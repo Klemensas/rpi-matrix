@@ -13,15 +13,19 @@
 static void printUsage(const char* program) {
     std::cout << "Usage: " << program << " [options]\n"
               << "Options:\n"
-              << "  --device INDEX         Camera device index (default: 0)\n"
-              << "  --video PATH           Use a video file instead of a camera device\n"
-              << "  --width WIDTH          Capture width request (default: 640)\n"
-              << "  --height HEIGHT        Capture height request (default: 480)\n"
-              << "  --rows ROWS            Matrix rows per panel (default: 64)\n"
-              << "  --cols COLS            Matrix columns per panel (default: 64)\n"
-              << "  --chain CHAIN          Number of chained matrices (default: 1)\n"
-              << "  --parallel PARALLEL    Number of parallel chains (default: 1)\n"
-              << "  --help                 Show this help message\n"
+              << "Input options:\n"
+              << "  --device INDEX             Camera device index (default: 0)\n"
+              << "  --video PATH               Use a video file instead of a camera device\n"
+              << "  --width WIDTH              Capture width request (default: 640)\n"
+              << "  --height HEIGHT            Capture height request (default: 480)\n"
+              << "\n"
+              << "Matrix configuration:\n"
+              << "  --led-rows ROWS            Matrix rows per panel (default: 64)\n"
+              << "  --led-cols COLS            Matrix columns per panel (default: 64)\n"
+              << "  --led-chain CHAIN          Number of chained matrices (default: 1)\n"
+              << "  --led-parallel PARALLEL    Number of parallel chains (default: 1)\n"
+              << "\n"
+              << "  --help                     Show this help message\n"
               << "\n"
               << "Keys:\n"
               << "  1-5  switch display modes\n"
@@ -91,13 +95,13 @@ int main(int argc, char *argv[]) {
             width = std::atoi(argv[++i]);
         } else if (strcmp(argv[i], "--height") == 0 && i + 1 < argc) {
             height = std::atoi(argv[++i]);
-        } else if (strcmp(argv[i], "--rows") == 0 && i + 1 < argc) {
+        } else if (strcmp(argv[i], "--led-rows") == 0 && i + 1 < argc) {
             rows = std::atoi(argv[++i]);
-        } else if (strcmp(argv[i], "--cols") == 0 && i + 1 < argc) {
+        } else if (strcmp(argv[i], "--led-cols") == 0 && i + 1 < argc) {
             cols = std::atoi(argv[++i]);
-        } else if (strcmp(argv[i], "--chain") == 0 && i + 1 < argc) {
+        } else if (strcmp(argv[i], "--led-chain") == 0 && i + 1 < argc) {
             chain_length = std::atoi(argv[++i]);
-        } else if (strcmp(argv[i], "--parallel") == 0 && i + 1 < argc) {
+        } else if (strcmp(argv[i], "--led-parallel") == 0 && i + 1 < argc) {
             parallel = std::atoi(argv[++i]);
         } else {
             std::cerr << "Unknown option: " << argv[i] << std::endl;

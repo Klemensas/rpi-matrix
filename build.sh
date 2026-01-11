@@ -38,7 +38,7 @@ cd build
 
 # Configure and build
 echo "Configuring CMake..."
-cmake ..
+cmake .. -DBUILD_RPI=ON
 
 echo "Building..."
 make -j$(nproc)

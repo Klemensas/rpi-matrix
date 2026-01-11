@@ -22,10 +22,16 @@ class RpicamToMatrix {
 public:
     RpicamToMatrix(int rows, int cols, 
                    int chain_length = 1, int parallel = 1,
-                   const std::string& hardware_mapping = "regular")
+                   const std::string& hardware_mapping = "regular",
+                   int brightness = 50, int gpio_slowdown = 4,
+                   int pwm_bits = 11, int pwm_lsb_nanoseconds = 130,
+                   int limit_refresh_rate_hz = 0)
         : rows_(rows), cols_(cols),
           chain_length_(chain_length), parallel_(parallel),
-          hardware_mapping_(hardware_mapping) {
+          hardware_mapping_(hardware_mapping),
+          brightness_(brightness), gpio_slowdown_(gpio_slowdown),
+          pwm_bits_(pwm_bits), pwm_lsb_nanoseconds_(pwm_lsb_nanoseconds),
+          limit_refresh_rate_hz_(limit_refresh_rate_hz) {
         setupMatrix();
     }
 
@@ -135,12 +141,16 @@ private:
         options.chain_length = chain_length_;
         options.parallel = parallel_;
         options.hardware_mapping = hardware_mapping_.c_str();
-        options.brightness = 50;
+        options.brightness = brightness_;
+        options.pwm_bits = pwm_bits_;
+        options.pwm_lsb_nanoseconds = pwm_lsb_nanoseconds_;
+        options.limit_refresh_rate_hz = limit_refresh_rate_hz_;
         options.disable_hardware_pulsing = true;
+        options.show_refresh_rate = true;
         
         RuntimeOptions runtime_options;
         runtime_options.drop_privileges = 0;
-        runtime_options.gpio_slowdown = 4;
+        runtime_options.gpio_slowdown = gpio_slowdown_;
         
         matrix_ = RGBMatrix::CreateFromOptions(options, runtime_options);
         if (matrix_) {
@@ -186,6 +196,11 @@ private:
     int chain_length_;
     int parallel_;
     std::string hardware_mapping_;
+    int brightness_;
+    int gpio_slowdown_;
+    int pwm_bits_;
+    int pwm_lsb_nanoseconds_;
+    int limit_refresh_rate_hz_;
     RGBMatrix *matrix_;
     FrameCanvas *canvas_;
 };
@@ -193,14 +208,27 @@ private:
 void printUsage(const char* program) {
     std::cout << "Usage: " << program << " [options]\n"
               << "Options:\n"
-              << "  --width WIDTH          Input video width (default: 640)\n"
-              << "  --height HEIGHT        Input video height (default: 480)\n"
-              << "  --rows ROWS            Matrix rows per panel (default: 64)\n"
-              << "  --cols COLS            Matrix columns per panel (default: 64)\n"
-              << "  --chain CHAIN          Number of chained matrices (default: 1)\n"
-              << "  --parallel PARALLEL    Number of parallel chains (default: 1)\n"
-              << "  --hardware-mapping MAP Hardware mapping: regular, adafruit-hat, adafruit-hat-pwm (default: regular)\n"
-              << "  --help                   Show this help message\n"
+              << "Input options:\n"
+              << "  --width WIDTH                  Input video width (default: 640)\n"
+              << "  --height HEIGHT                Input video height (default: 480)\n"
+              << "\n"
+              << "Matrix configuration:\n"
+              << "  --led-rows ROWS                Matrix rows per panel (default: 64)\n"
+              << "  --led-cols COLS                Matrix columns per panel (default: 64)\n"
+              << "  --led-chain CHAIN              Number of chained matrices (default: 1)\n"
+              << "  --led-parallel PARALLEL        Number of parallel chains (default: 1)\n"
+              << "  --led-hardware-mapping MAP     Hardware mapping: regular, adafruit-hat, adafruit-hat-pwm (default: regular)\n"
+              << "\n"
+              << "Matrix performance tuning:\n"
+              << "  --led-brightness N             LED brightness 0-100 (default: 50)\n"
+              << "  --led-slowdown-gpio N          GPIO slowdown for stability (default: 4, try 2-4)\n"
+              << "  --led-pwm-bits N               PWM bits for color depth (default: 11, range: 1-11)\n"
+              << "                                 Lower values = less CPU, higher refresh rate, fewer colors\n"
+              << "  --led-pwm-lsb-nanoseconds N    PWM LSB nanoseconds (default: 130, range: 50-3000)\n"
+              << "                                 Lower values = higher refresh rate, more ghosting\n"
+              << "  --led-limit-refresh N          Limit refresh rate to N Hz (default: 0 = no limit)\n"
+              << "\n"
+              << "  --help                         Show this help message\n"
               << "\n"
               << "Reads raw RGB888 frames from stdin and displays on LED matrix.\n"
               << "\n"
@@ -223,6 +251,11 @@ int main(int argc, char *argv[]) {
     int chain_length = 1;
     int parallel = 1;
     std::string hardware_mapping = "regular";
+    int brightness = 50;
+    int gpio_slowdown = 4;
+    int pwm_bits = 11;
+    int pwm_lsb_nanoseconds = 130;
+    int limit_refresh_rate_hz = 0;
 
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "--help") == 0 || strcmp(argv[i], "-h") == 0) {
@@ -232,16 +265,26 @@ int main(int argc, char *argv[]) {
             input_width = std::atoi(argv[++i]);
         } else if (strcmp(argv[i], "--height") == 0 && i + 1 < argc) {
             input_height = std::atoi(argv[++i]);
-        } else if (strcmp(argv[i], "--rows") == 0 && i + 1 < argc) {
+        } else if (strcmp(argv[i], "--led-rows") == 0 && i + 1 < argc) {
             rows = std::atoi(argv[++i]);
-        } else if (strcmp(argv[i], "--cols") == 0 && i + 1 < argc) {
+        } else if (strcmp(argv[i], "--led-cols") == 0 && i + 1 < argc) {
             cols = std::atoi(argv[++i]);
-        } else if (strcmp(argv[i], "--chain") == 0 && i + 1 < argc) {
+        } else if (strcmp(argv[i], "--led-chain") == 0 && i + 1 < argc) {
             chain_length = std::atoi(argv[++i]);
-        } else if (strcmp(argv[i], "--parallel") == 0 && i + 1 < argc) {
+        } else if (strcmp(argv[i], "--led-parallel") == 0 && i + 1 < argc) {
             parallel = std::atoi(argv[++i]);
-        } else if (strcmp(argv[i], "--hardware-mapping") == 0 && i + 1 < argc) {
+        } else if (strcmp(argv[i], "--led-hardware-mapping") == 0 && i + 1 < argc) {
             hardware_mapping = argv[++i];
+        } else if (strcmp(argv[i], "--led-brightness") == 0 && i + 1 < argc) {
+            brightness = std::atoi(argv[++i]);
+        } else if (strcmp(argv[i], "--led-slowdown-gpio") == 0 && i + 1 < argc) {
+            gpio_slowdown = std::atoi(argv[++i]);
+        } else if (strcmp(argv[i], "--led-pwm-bits") == 0 && i + 1 < argc) {
+            pwm_bits = std::atoi(argv[++i]);
+        } else if (strcmp(argv[i], "--led-pwm-lsb-nanoseconds") == 0 && i + 1 < argc) {
+            pwm_lsb_nanoseconds = std::atoi(argv[++i]);
+        } else if (strcmp(argv[i], "--led-limit-refresh") == 0 && i + 1 < argc) {
+            limit_refresh_rate_hz = std::atoi(argv[++i]);
         } else {
             std::cerr << "Unknown option: " << argv[i] << std::endl;
             printUsage(argv[0]);
@@ -257,9 +300,19 @@ int main(int argc, char *argv[]) {
               << ", chain=" << chain_length 
               << ", parallel=" << parallel << std::endl;
     std::cout << "Hardware mapping: " << hardware_mapping << std::endl;
+    std::cout << "Display settings: brightness=" << brightness
+              << ", pwm-bits=" << pwm_bits
+              << ", pwm-lsb-ns=" << pwm_lsb_nanoseconds << std::endl;
+    std::cout << "Performance: gpio-slowdown=" << gpio_slowdown;
+    if (limit_refresh_rate_hz > 0) {
+        std::cout << ", refresh-limit=" << limit_refresh_rate_hz << "Hz";
+    }
+    std::cout << std::endl;
     std::cout << "=" << std::string(60, '=') << std::endl;
 
-    RpicamToMatrix app(rows, cols, chain_length, parallel, hardware_mapping);
+    RpicamToMatrix app(rows, cols, chain_length, parallel, hardware_mapping,
+                       brightness, gpio_slowdown, pwm_bits, pwm_lsb_nanoseconds,
+                       limit_refresh_rate_hz);
     app.run(input_width, input_height);
 
     std::cout << "Exiting..." << std::endl;
