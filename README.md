@@ -270,6 +270,118 @@ See the [rpi-rgb-led-matrix documentation](https://github.com/hzeller/rpi-rgb-le
 
 The default resolution (640x480) works well for most LED matrices. Higher resolutions will be downscaled to fit the matrix size. Lower resolutions may improve performance.
 
+### Field of View (FOV) Control
+
+The `--sensor-width` and `--sensor-height` flags allow you to control the camera's field of view independently from processing resolution.
+
+#### How It Works
+
+**Important:** Libcamera's sensor mode selection is coupled to requested stream size. This creates a fundamental tradeoff:
+
+```
+Small Output Request (e.g., 576x192)
+  → Libcamera selects small sensor mode (e.g., 1536x864)
+  → Narrower field of view (zoomed in)
+  → Fast processing
+
+Large Sensor Request (e.g., 2304x1296)
+  → Libcamera selects larger sensor mode (e.g., 2304x1296)  
+  → Wider field of view
+  → Slower due to software downscaling overhead
+```
+
+#### Usage
+
+```bash
+# Wide FOV - uses 2304x1296 sensor mode, scales to 576x192 for processing
+sudo ./build/camera_to_matrix --width 576 --height 192 \
+  --sensor-width 2304 --sensor-height 1296 --led-chain 3
+
+# Very wide FOV - uses full sensor, but MUCH slower
+sudo ./build/camera_to_matrix --width 576 --height 192 \
+  --sensor-width 4608 --sensor-height 2592 --led-chain 3
+```
+
+#### Performance Impact
+
+**The tradeoff is unavoidable with current implementation:**
+
+- **Wider FOV = Lower FPS** (more data to transfer and scale)
+- **Narrower FOV = Higher FPS** (less data to process)
+
+Typical performance on Raspberry Pi 4:
+
+| Configuration | Mode 1 (Pass-through) | Modes 2-5 (Effects) | FOV |
+|---------------|----------------------|---------------------|-----|
+| Auto (no sensor flags) | ~55 fps | ~39 fps | Medium (cropped) |
+| `--sensor 2304x1296` | ~36 fps | ~25 fps | Wide |
+| `--sensor 4608x2592` | ~20 fps | ~14 fps | Maximum |
+
+#### When to Use
+
+✅ **Use sensor mode flags when:**
+- You need wider field of view than auto-selection provides
+- You can accept lower FPS (25-35fps is enough)
+- You're using lower processing resolutions (e.g., 384x128)
+
+❌ **Don't use sensor flags when:**
+- You need maximum FPS (>50fps)
+- The auto-selected FOV is acceptable
+- You're already bottlenecked on effects processing
+
+#### Viewing Available Sensor Modes
+
+Check what sensor modes your camera supports:
+
+```bash
+libcamera-hello --list-cameras
+```
+
+Typical Camera Module 3 (IMX708) modes:
+- `4608x2592` @ 14fps - Full sensor (widest FOV, slowest)
+- `2304x1296` @ 56fps - Half resolution (wide FOV, moderate speed)
+- `1536x864` @ 120fps - Cropped/binned (medium FOV, fastest)
+
+#### Why Isn't the ISP Scaling for Free?
+
+**The fundamental limitation:** Libcamera's public API couples sensor mode selection to requested output stream size. While the Raspberry Pi's ISP hardware CAN scale efficiently, libcamera doesn't expose fine-grained control to:
+1. Force a specific sensor mode
+2. AND request a different output size  
+3. With ISP-only (hardware) scaling
+
+The current implementation requests a large stream size (forces wide sensor mode), receives the large frames from the camera, then uses software `cv::resize()` to downscale. This CPU overhead is why wider FOV hurts performance.
+
+#### Alternatives
+
+If you need both wide FOV AND high FPS:
+
+1. **Lower Processing Resolution**
+   ```bash
+   # Process at 384x128 instead of 576x192
+   sudo ./build/camera_to_matrix --width 384 --height 128 \
+     --sensor-width 2304 --sensor-height 1296 --led-chain 3
+   ```
+   You may still get ~45fps with acceptable detail.
+
+2. **Physical Camera Changes**
+   - Use a different lens (wide-angle lens for Camera Module 3)
+   - Physically position the camera further from the scene
+   - Use a different camera with wider default FOV
+
+3. **Accept Auto FOV**
+   ```bash
+   # Let libcamera pick - usually 1536x864 mode with decent FOV
+   sudo ./build/camera_to_matrix --width 576 --height 192 --led-chain 3
+   ```
+   Fast and often good enough.
+
+4. **Future Improvement**
+   The ideal solution would use libcamera's raw stream API or a lower-level camera interface (`v4l2`, `MMAL`) to decouple sensor mode selection from output scaling. This is complex and outside the scope of the current implementation.
+
+#### Summary
+
+The `--sensor-width/height` feature **does work** and provides wider FOV, but at a **significant performance cost** due to software scaling. Use it when FOV is more important than FPS, or reduce your processing resolution to compensate.
+
 ## Installation
 
 To install the executable system-wide:
