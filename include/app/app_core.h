@@ -51,10 +51,11 @@ private:
     void processFilledSilhouette(const cv::Mat& in_bgr, cv::Mat& out_bgr);
     void processOutline(const cv::Mat& in_bgr, cv::Mat& out_bgr);
     void processMotionTrails(const cv::Mat& in_bgr, cv::Mat& out_bgr);
-    void processEnergyMotion(const cv::Mat& in_bgr, cv::Mat& out_bgr);
     void processRainbowTrails(const cv::Mat& in_bgr, cv::Mat& out_bgr);
     void processDoubleExposure(const cv::Mat& in_bgr, cv::Mat& out_bgr);
     void processProceduralShapes(cv::Mat& out_bgr);
+    void processWavePatterns(cv::Mat& out_bgr);
+    void processGeometricAbstraction(const cv::Mat& in_bgr, cv::Mat& out_bgr);
     void processMultiPanel(const cv::Mat& in_bgr, cv::Mat& out_bgr);
     
     // Procedural shapes helpers
@@ -137,6 +138,10 @@ private:
     float hue_shift_ = 0.0f;
     float fill_mode_progress_ = 0.0f;  // 0.0 = outline only, 1.0 = filled
     float color_morph_progress_ = 0.0f;  // For color morphing
+    
+    // Wave patterns state
+    float wave_time_ = 0.0f;
+    float wave_phase_ = 0.0f;
 };
 
 #endif // APP_CORE_H

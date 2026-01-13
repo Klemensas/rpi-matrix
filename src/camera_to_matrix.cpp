@@ -78,10 +78,11 @@ public:
         std::cout << "  2 - Transformed camera (filled silhouette)" << std::endl;
         std::cout << "  3 - Outline only (wireframe)" << std::endl;
         std::cout << "  4 - Motion Trails (Ghost Effect)" << std::endl;
-        std::cout << "  5 - Energy-based Motion (movement adds energy, decays over time)" << std::endl;
-        std::cout << "  6 - Rainbow Motion Trails (camera + colorful movement paths)" << std::endl;
-        std::cout << "  7 - Double Exposure (time-based with randomization)" << std::endl;
-        std::cout << "  8 - Procedural Shapes (colorful morphing geometric shapes)" << std::endl;
+        std::cout << "  5 - Rainbow Motion Trails (camera + colorful movement paths)" << std::endl;
+        std::cout << "  6 - Double Exposure (time-based with randomization)" << std::endl;
+        std::cout << "  7 - Procedural Shapes (colorful morphing geometric shapes)" << std::endl;
+        std::cout << "  8 - Wave Patterns (interference patterns with multiple sine waves)" << std::endl;
+        std::cout << "  9 - Geometric Abstraction (low-poly geometric interpretation)" << std::endl;
         std::cout << "\nMulti-Panel Mode (independent of display modes):" << std::endl;
         int num_panels = core_.getNumPanels();
         if (num_panels > 1) {
@@ -90,7 +91,7 @@ public:
                 std::cout << " -> P" << i;
             }
             std::cout << " -> All -> Off)" << std::endl;
-            std::cout << "      When enabled, 1-7 keys apply effects to targeted panel(s)" << std::endl;
+            std::cout << "      When enabled, 1-9 keys apply effects to targeted panel(s)" << std::endl;
         } else {
             std::cout << "  (Multi-panel mode requires --led-chain > 1)" << std::endl;
         }
@@ -99,7 +100,7 @@ public:
         if (num_panels > 1) {
             std::cout << "  q - Toggle panel layout mode (extend <-> repeat)" << std::endl;
         }
-        std::cout << "Press 1-8, §, d" << (num_panels > 1 ? ", q" : "") << "; Ctrl+C to stop" << std::endl;
+        std::cout << "Press 1-9, §, d" << (num_panels > 1 ? ", q" : "") << "; Ctrl+C to stop" << std::endl;
 
         // Keep running until interrupted
         while (running) {
@@ -218,7 +219,7 @@ private:
                                 }
                             }
                         }
-                    } else if (key >= '1' && key <= '8') {
+                    } else if (key >= '1' && key <= '9') {
                         int effect = key - '0';
                         
                         if (in_multi_panel) {
@@ -245,10 +246,11 @@ private:
                                 "Transformed camera (filled silhouette)",
                                 "Outline only (wireframe)",
                                 "Motion Trails (Ghost Effect)",
-                                "Energy-based Motion",
                                 "Rainbow Motion Trails",
                                 "Double Exposure",
-                                "Procedural Shapes"
+                                "Procedural Shapes",
+                                "Wave Patterns",
+                                "Geometric Abstraction"
                             };
                             std::cout << "Switched to mode " << effect << ": " << mode_names[effect] << std::endl;
                         }

@@ -2,6 +2,7 @@
 
 #include <cmath>
 #include <cstdlib>
+#include <iostream>
 #include <opencv2/imgproc.hpp>
 
 #ifndef M_PI
@@ -96,10 +97,11 @@ void AppCore::processFrame(const cv::Mat& in_bgr, cv::Mat& out_bgr) {
             case 2: processFilledSilhouette(in_bgr, prev_output); break;
             case 3: processOutline(in_bgr, prev_output); break;
             case 4: processMotionTrails(in_bgr, prev_output); break;
-            case 5: processEnergyMotion(in_bgr, prev_output); break;
-            case 6: processRainbowTrails(in_bgr, prev_output); break;
-            case 7: processDoubleExposure(in_bgr, prev_output); break;
-            case 8: processProceduralShapes(prev_output); break;
+            case 5: processRainbowTrails(in_bgr, prev_output); break;
+            case 6: processDoubleExposure(in_bgr, prev_output); break;
+            case 7: processProceduralShapes(prev_output); break;
+            case 8: processWavePatterns(prev_output); break;
+            case 9: processGeometricAbstraction(in_bgr, prev_output); break;
             default: processPassThrough(in_bgr, prev_output); break;
         }
         
@@ -111,10 +113,11 @@ void AppCore::processFrame(const cv::Mat& in_bgr, cv::Mat& out_bgr) {
             case 2: processFilledSilhouette(in_bgr, curr_output); break;
             case 3: processOutline(in_bgr, curr_output); break;
             case 4: processMotionTrails(in_bgr, curr_output); break;
-            case 5: processEnergyMotion(in_bgr, curr_output); break;
-            case 6: processRainbowTrails(in_bgr, curr_output); break;
-            case 7: processDoubleExposure(in_bgr, curr_output); break;
-            case 8: processProceduralShapes(curr_output); break;
+            case 5: processRainbowTrails(in_bgr, curr_output); break;
+            case 6: processDoubleExposure(in_bgr, curr_output); break;
+            case 7: processProceduralShapes(curr_output); break;
+            case 8: processWavePatterns(curr_output); break;
+            case 9: processGeometricAbstraction(in_bgr, curr_output); break;
             default: processPassThrough(in_bgr, curr_output); break;
         }
         
@@ -128,10 +131,11 @@ void AppCore::processFrame(const cv::Mat& in_bgr, cv::Mat& out_bgr) {
             case 2: processFilledSilhouette(in_bgr, out_bgr); break;
             case 3: processOutline(in_bgr, out_bgr); break;
             case 4: processMotionTrails(in_bgr, out_bgr); break;
-            case 5: processEnergyMotion(in_bgr, out_bgr); break;
-            case 6: processRainbowTrails(in_bgr, out_bgr); break;
-            case 7: processDoubleExposure(in_bgr, out_bgr); break;
-            case 8: processProceduralShapes(out_bgr); break;
+            case 5: processRainbowTrails(in_bgr, out_bgr); break;
+            case 6: processDoubleExposure(in_bgr, out_bgr); break;
+            case 7: processProceduralShapes(out_bgr); break;
+            case 8: processWavePatterns(out_bgr); break;
+            case 9: processGeometricAbstraction(in_bgr, out_bgr); break;
             default: processPassThrough(in_bgr, out_bgr); break;
         }
     }
@@ -191,22 +195,6 @@ void AppCore::processMotionTrails(const cv::Mat& in_bgr, cv::Mat& out_bgr) {
     findPersonContours(fg_mask, contours, /*min_contour_area=*/1000);
 
     silhouette_frame_ *= trail_alpha_;
-    for (const auto& c : contours) {
-        cv::drawContours(silhouette_frame_, std::vector<std::vector<cv::Point>>{c}, -1,
-                         cv::Scalar(255, 255, 255), cv::FILLED);
-    }
-    out_bgr = silhouette_frame_;
-}
-
-void AppCore::processEnergyMotion(const cv::Mat& in_bgr, cv::Mat& out_bgr) {
-    cv::Mat fg_mask;
-    background_subtractor_->apply(in_bgr, fg_mask);
-
-    std::vector<std::vector<cv::Point>> contours;
-    findPersonContours(fg_mask, contours, /*min_contour_area=*/1000);
-
-    // Fast uniform decay + overwrite with bright new silhouettes
-    silhouette_frame_ *= 0.92f;
     for (const auto& c : contours) {
         cv::drawContours(silhouette_frame_, std::vector<std::vector<cv::Point>>{c}, -1,
                          cv::Scalar(255, 255, 255), cv::FILLED);
@@ -865,25 +853,7 @@ void AppCore::processPanelRegion(const cv::Mat& in_region, cv::Mat& out_region, 
             }
             break;
         case 5:
-            // Energy motion
-            {
-                cv::Mat fg_mask;
-                panel_bg_subtractors_[panel_index]->apply(in_region, fg_mask);
-                
-                std::vector<std::vector<cv::Point>> contours;
-                findPersonContours(fg_mask, contours, /*min_contour_area=*/500);
-                
-                panel_silhouette_frames_[panel_index] *= 0.92f;
-                for (const auto& c : contours) {
-                    cv::drawContours(panel_silhouette_frames_[panel_index], 
-                                   std::vector<std::vector<cv::Point>>{c}, -1,
-                                   cv::Scalar(255, 255, 255), cv::FILLED);
-                }
-                panel_silhouette_frames_[panel_index].copyTo(out_region);
-            }
-            break;
-        case 6:
-            // Rainbow trails - use global mode (too complex for per-panel)
+            // Rainbow trails (renumbered from 6) - use global mode (too complex for per-panel)
             // Just apply a simple version: camera feed + rainbow motion overlay
             {
                 cv::Mat fg_mask;
@@ -909,8 +879,8 @@ void AppCore::processPanelRegion(const cv::Mat& in_region, cv::Mat& out_region, 
                 temp_output.copyTo(out_region);
             }
             break;
-        case 7:
-            // Double exposure - full implementation with per-panel state
+        case 6:
+            // Double exposure (renumbered from 7) - full implementation with per-panel state
             {
                 cv::Mat temp_output;
                 processDoubleExposureWithState(in_region, temp_output,
@@ -922,8 +892,8 @@ void AppCore::processPanelRegion(const cv::Mat& in_region, cv::Mat& out_region, 
                 temp_output.copyTo(out_region);
             }
             break;
-        case 8:
-            // Procedural shapes - generate for this panel region
+        case 7:
+            // Procedural shapes (renumbered from 8) - generate for this panel region
             {
                 // Temporarily set size to panel region size
                 int saved_w = width_;
@@ -936,6 +906,46 @@ void AppCore::processPanelRegion(const cv::Mat& in_region, cv::Mat& out_region, 
                 // Restore size
                 width_ = saved_w;
                 height_ = saved_h;
+            }
+            break;
+        case 8:
+            // Wave patterns - generate for this panel region
+            {
+                int saved_w = width_;
+                int saved_h = height_;
+                width_ = w;
+                height_ = h;
+                processWavePatterns(out_region);
+                width_ = saved_w;
+                height_ = saved_h;
+            }
+            break;
+        case 9:
+            // Geometric abstraction
+            {
+                cv::Mat fg_mask;
+                panel_bg_subtractors_[panel_index]->apply(in_region, fg_mask);
+                
+                std::vector<std::vector<cv::Point>> contours;
+                findPersonContours(fg_mask, contours, /*min_contour_area=*/500);
+                
+                temp_output = cv::Mat::zeros(h, w, CV_8UC3);
+                
+                for (const auto& c : contours) {
+                    std::vector<cv::Point> approx;
+                    double epsilon = 15.0;
+                    cv::approxPolyDP(c, approx, epsilon, false);
+                    
+                    if (approx.size() >= 3) {
+                        float area = cv::contourArea(c);
+                        float hue = fmod(area * 0.1f, 360.0f);
+                        cv::Scalar color = hsvToBgr(hue, 1.0f, 1.0f);
+                        cv::fillPoly(temp_output, std::vector<std::vector<cv::Point>>{approx}, color);
+                        cv::polylines(temp_output, std::vector<std::vector<cv::Point>>{approx}, true, 
+                                     cv::Scalar(255, 255, 255), 2);
+                    }
+                }
+                temp_output.copyTo(out_region);
             }
             break;
         default:
@@ -969,8 +979,28 @@ void AppCore::updateAutoCycling() {
         // Save current mode as previous
         previous_mode_ = display_mode_.load();
         
-        // Cycle to next mode (1->2->3->4->5->6->7->8->1)
-        int next_mode = (display_mode_.load() % 8) + 1;
+        // Cycle to next mode (1->2->3->4->5->6->7->8->9->1)
+        int current = display_mode_.load();
+        int next_mode = (current % 9) + 1;
+        
+        const char* mode_names[] = {
+            "",
+            "Debug View",
+            "Filled Silhouette",
+            "Outline Only",
+            "Motion Trails",
+            "Rainbow Motion Trails",
+            "Double Exposure",
+            "Procedural Shapes",
+            "Wave Patterns",
+            "Geometric Abstraction"
+        };
+        
+        std::cout << "[AUTO-CYCLE] Switching from Effect " << current 
+                  << " (" << (current < 10 ? mode_names[current] : "Unknown") << ")"
+                  << " to Effect " << next_mode 
+                  << " (" << (next_mode < 10 ? mode_names[next_mode] : "Unknown") << ")" << std::endl;
+        
         display_mode_ = next_mode;
         
         // Start transition
@@ -997,5 +1027,93 @@ void AppCore::toggleAutoCycling() {
         cycle_frame_counter_ = 0;
         frames_until_next_mode_ = getRandomCycleInterval();
         transition_frames_remaining_ = 0;
+    }
+}
+
+// Effect 8: Wave Patterns (Ambient System Mode)
+void AppCore::processWavePatterns(cv::Mat& out_bgr) {
+    out_bgr = cv::Mat::zeros(height_, width_, CV_8UC3);
+    
+    wave_time_ += 0.05f;
+    wave_phase_ += 0.02f;
+    
+    // Optimize: Process at lower resolution then upscale for better performance
+    // Process at half resolution for 4x speedup
+    int proc_w = width_ / 2;
+    int proc_h = height_ / 2;
+    if (proc_w < 1) proc_w = 1;
+    if (proc_h < 1) proc_h = 1;
+    
+    cv::Mat proc_frame(proc_h, proc_w, CV_8UC3);
+    
+    // Create interference pattern with multiple waves at reduced resolution
+    for (int y = 0; y < proc_h; y++) {
+        for (int x = 0; x < proc_w; x++) {
+            // Scale coordinates back to original size for wave calculations
+            float fx = (x * 2.0f) * 0.1f;
+            float fy = (y * 2.0f) * 0.1f;
+            
+            // Multiple sine waves for interference
+            float wave1 = std::sin(fx + wave_time_);
+            float wave2 = std::sin(fy + wave_time_ * 1.3f);
+            float wave3 = std::sin((fx + fy) * 0.07f + wave_phase_);
+            
+            float combined = (wave1 + wave2 + wave3) / 3.0f;
+            
+            // Map to color (hue based on position, brightness based on wave)
+            float hue = fmod((fx + fy) * 10.0f + wave_time_ * 20.0f, 360.0f);
+            float brightness = (combined + 1.0f) * 0.5f;  // Normalize to 0-1
+            cv::Scalar color = hsvToBgr(hue, 1.0f, brightness);
+            
+            proc_frame.at<cv::Vec3b>(y, x) = cv::Vec3b(
+                static_cast<uint8_t>(color[0]),
+                static_cast<uint8_t>(color[1]),
+                static_cast<uint8_t>(color[2])
+            );
+        }
+    }
+    
+    // Upscale to full resolution
+    cv::resize(proc_frame, out_bgr, cv::Size(width_, height_), 0, 0, cv::INTER_LINEAR);
+}
+
+// Effect 9: Geometric Abstraction (Active System Mode - Interpretation-based)
+void AppCore::processGeometricAbstraction(const cv::Mat& in_bgr, cv::Mat& out_bgr) {
+    if (in_bgr.empty()) {
+        out_bgr = cv::Mat::zeros(height_, width_, CV_8UC3);
+        return;
+    }
+    
+    cv::Mat fg_mask;
+    background_subtractor_->apply(in_bgr, fg_mask);
+    
+    // Clean up noise with morphological operations
+    cv::Mat kernel = cv::getStructuringElement(cv::MORPH_ELLIPSE, cv::Size(5, 5));
+    cv::morphologyEx(fg_mask, fg_mask, cv::MORPH_OPEN, kernel);  // Remove small noise
+    cv::morphologyEx(fg_mask, fg_mask, cv::MORPH_CLOSE, kernel); // Fill small holes
+    
+    std::vector<std::vector<cv::Point>> contours;
+    findPersonContours(fg_mask, contours, /*min_contour_area=*/1000);
+    
+    out_bgr = cv::Mat::zeros(in_bgr.rows, in_bgr.cols, CV_8UC3);
+    
+    for (const auto& c : contours) {
+        // Approximate contour with fewer points for geometric look
+        std::vector<cv::Point> approx;
+        double epsilon = 15.0;  // Approximation accuracy
+        cv::approxPolyDP(c, approx, epsilon, false);
+        
+        if (approx.size() >= 3) {
+            // Draw simplified polygon with gradient colors
+            // Use contour area to generate hue (0-360 range for hsvToBgr)
+            float area = cv::contourArea(c);
+            float hue = fmod(area * 0.1f, 360.0f);
+            cv::Scalar color = hsvToBgr(hue, 1.0f, 1.0f);
+            cv::fillPoly(out_bgr, std::vector<std::vector<cv::Point>>{approx}, color);
+            
+            // Draw outline
+            cv::polylines(out_bgr, std::vector<std::vector<cv::Point>>{approx}, true, 
+                         cv::Scalar(255, 255, 255), 2);
+        }
     }
 }
