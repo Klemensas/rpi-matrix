@@ -382,6 +382,54 @@ If you need both wide FOV AND high FPS:
 
 The `--sensor-width/height` feature **does work** and provides wider FOV, but at a **significant performance cost** due to software scaling. Use it when FOV is more important than FPS, or reduce your processing resolution to compensate.
 
+### Multi-Panel Layout Modes
+
+When using chained matrices (`--led-chain > 1`), you can control how the image is distributed across the panels by pressing the **`q` key** to toggle between modes.
+
+#### Available Modes
+
+**1. Extend Mode (default)**
+
+- **Behavior**: The image extends/spans across all panels horizontally
+- **Example**: A 192x64 image is split into three 64x64 panels side-by-side
+- **Use case**: Create one wide panoramic display
+- **Effect control**: In multi-panel mode (press `§`), you can apply different visual effects to each physical panel region
+
+**2. Repeat Mode (press `q` to activate)**
+
+- **Behavior**: The same full image is repeated on each panel, but with different effects applied
+- **Example**: Three 64x64 panels each showing the same view, but Panel 1 shows pass-through, Panel 2 shows silhouette, Panel 3 shows rainbow trails
+- **Use case**: Compare multiple effects side-by-side on the same scene
+- **Effect control**: Press `§` to enable multi-panel mode and target individual panels, then press `1-6` to apply different effects
+
+#### Multi-Panel Controls
+
+When `--led-chain > 1`:
+- **`q` key**: Toggle panel layout mode at runtime
+  - **EXTEND** ↔ **REPEAT**
+  - Switch between spanning image across panels vs. repeating same image on each panel
+- **`§` key**: Toggle multi-panel mode and cycle through panel targets
+  - Pressing once: Target Panel 1
+  - Pressing again: Target Panel 2
+  - Continue pressing: Target Panel 3, ..., All panels, then Off (back to shared mode)
+- **`1-6` keys**: Apply display modes/effects
+  - In shared mode: Applies to all panels
+  - In multi-panel mode: Applies only to the currently targeted panel(s)
+
+#### Examples
+
+```bash
+# Three panels - extend mode (default, one wide display)
+sudo ./build/camera_to_matrix --width 576 --height 192 --led-chain 3
+
+# Press 'q' at runtime to switch to repeat mode (same view on each panel)
+
+# Two panels - start with extend, toggle with 'q'
+sudo ./build/camera_to_matrix --width 128 --height 128 --led-chain 2
+```
+
+**Note**: In **extend mode**, the input resolution typically matches the total display width (e.g., `--width 192` for three 64x64 panels). In **repeat mode**, the input is automatically resized to fit each panel, so any resolution works.
+
 ## Installation
 
 To install the executable system-wide:

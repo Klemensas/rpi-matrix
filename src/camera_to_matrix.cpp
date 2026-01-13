@@ -48,6 +48,8 @@ public:
           debug_enabled_(true),
           core_(width, height, chain_length) {}
 
+    AppCore& getCore() { return core_; }
+
     void run() {
         if (geteuid() == 0) {
             const char* sudo_user = std::getenv("SUDO_USER");
@@ -77,6 +79,9 @@ public:
         std::cout << "  3 - Outline only (wireframe)" << std::endl;
         std::cout << "  4 - Motion Trails (Ghost Effect)" << std::endl;
         std::cout << "  5 - Energy-based Motion (movement adds energy, decays over time)" << std::endl;
+        std::cout << "  6 - Rainbow Motion Trails (camera + colorful movement paths)" << std::endl;
+        std::cout << "  7 - Double Exposure (time-based with randomization)" << std::endl;
+        std::cout << "  8 - Procedural Shapes (colorful morphing geometric shapes)" << std::endl;
         std::cout << "\nMulti-Panel Mode (independent of display modes):" << std::endl;
         int num_panels = core_.getNumPanels();
         if (num_panels > 1) {
@@ -85,13 +90,16 @@ public:
                 std::cout << " -> P" << i;
             }
             std::cout << " -> All -> Off)" << std::endl;
-            std::cout << "      When enabled, 1-5 keys apply effects to targeted panel(s)" << std::endl;
+            std::cout << "      When enabled, 1-7 keys apply effects to targeted panel(s)" << std::endl;
         } else {
             std::cout << "  (Multi-panel mode requires --led-chain > 1)" << std::endl;
         }
         std::cout << "\nOther controls:" << std::endl;
         std::cout << "  d - Toggle debug info (FPS and CPU temperature)" << std::endl;
-        std::cout << "Press 1-5, §, or d; Ctrl+C to stop" << std::endl;
+        if (num_panels > 1) {
+            std::cout << "  q - Toggle panel layout mode (extend <-> repeat)" << std::endl;
+        }
+        std::cout << "Press 1-8, §, d" << (num_panels > 1 ? ", q" : "") << "; Ctrl+C to stop" << std::endl;
 
         // Keep running until interrupted
         while (running) {
@@ -210,7 +218,7 @@ private:
                                 }
                             }
                         }
-                    } else if (key >= '1' && key <= '5') {
+                    } else if (key >= '1' && key <= '8') {
                         int effect = key - '0';
                         
                         if (in_multi_panel) {
@@ -237,7 +245,10 @@ private:
                                 "Transformed camera (filled silhouette)",
                                 "Outline only (wireframe)",
                                 "Motion Trails (Ghost Effect)",
-                                "Energy-based Motion"
+                                "Energy-based Motion",
+                                "Rainbow Motion Trails",
+                                "Double Exposure",
+                                "Procedural Shapes"
                             };
                             std::cout << "Switched to mode " << effect << ": " << mode_names[effect] << std::endl;
                         }
@@ -245,6 +256,26 @@ private:
                         bool new_state = !debug_enabled_.load();
                         debug_enabled_ = new_state;
                         std::cout << "Debug info " << (new_state ? "enabled" : "disabled") << std::endl;
+                    } else if (key == 'q' || key == 'Q') {
+                        // Toggle panel mode (extend <-> repeat)
+                        PanelMode current = core_.getPanelMode();
+                        PanelMode new_mode = (current == PanelMode::EXTEND) ? PanelMode::REPEAT : PanelMode::EXTEND;
+                        core_.setPanelMode(new_mode);
+                        const char* mode_name = (new_mode == PanelMode::EXTEND) ? "EXTEND" : "REPEAT";
+                        std::cout << "Panel layout mode: " << mode_name << std::endl;
+                        if (new_mode == PanelMode::EXTEND) {
+                            std::cout << "  (Image spans across all panels)" << std::endl;
+                        } else {
+                            std::cout << "  (Same image on each panel with different effects)" << std::endl;
+                        }
+                    } else if (key == 'a' || key == 'A') {
+                        // Toggle auto-cycling
+                        core_.toggleAutoCycling();
+                        bool enabled = core_.isAutoCycling();
+                        std::cout << "Auto-cycling " << (enabled ? "enabled" : "disabled") << std::endl;
+                        if (enabled) {
+                            std::cout << "  (Modes will automatically cycle every 3-7 seconds)" << std::endl;
+                        }
                     }
                 }
             }
@@ -389,6 +420,7 @@ int main(int argc, char *argv[]) {
                        hardware_mapping, brightness, gpio_slowdown,
                        pwm_bits, pwm_dither_bits, pwm_lsb_nanoseconds, 
                        limit_refresh_rate_hz, sensor_width, sensor_height);
+    
     app.run();
 
     std::cout << "Exiting..." << std::endl;

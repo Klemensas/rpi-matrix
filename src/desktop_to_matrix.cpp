@@ -28,9 +28,11 @@ static void printUsage(const char* program) {
               << "  --help                     Show this help message\n"
               << "\n"
               << "Keys:\n"
-              << "  1-5  switch display modes\n"
-              << "  d    toggle debug info (FPS and temperature)\n"
-              << "  q/ESC quit\n"
+              << "  1-7   switch display modes\n"
+              << "  §     toggle multi-panel mode (if --led-chain > 1)\n"
+              << "  q     toggle panel layout mode: extend <-> repeat (if --led-chain > 1)\n"
+              << "  d     toggle debug info (FPS and temperature)\n"
+              << "  ESC   quit\n"
               << std::endl;
 }
 
@@ -138,8 +140,16 @@ int main(int argc, char *argv[]) {
     std::cout << "  3 - Outline only (wireframe)" << std::endl;
     std::cout << "  4 - Motion Trails (Ghost Effect)" << std::endl;
     std::cout << "  5 - Energy-based Motion (movement adds energy, decays over time)" << std::endl;
+    std::cout << "  6 - Rainbow Motion Trails (camera + colorful movement paths)" << std::endl;
+    std::cout << "  7 - Double Exposure (time-based with randomization)" << std::endl;
+    std::cout << "  8 - Procedural Shapes (colorful morphing geometric shapes)" << std::endl;
+    std::cout << "\nControls:" << std::endl;
+    if (chain_length > 1) {
+        std::cout << "  § - Toggle multi-panel mode (apply different effects per panel)" << std::endl;
+        std::cout << "  q - Toggle panel layout (extend: span image | repeat: same image)" << std::endl;
+    }
     std::cout << "  d - Toggle debug info (FPS and temperature)" << std::endl;
-    std::cout << "  q/ESC - Quit" << std::endl;
+    std::cout << "  ESC - Quit" << std::endl;
 
     cv::Mat frame;
     cv::Mat out;
@@ -163,15 +173,35 @@ int main(int argc, char *argv[]) {
         }
 
         int key = display.displayFrame(out, /*delay_ms=*/1, overlay_callback);
-        if (key == 27 || key == 'q' || key == 'Q') break;
+        if (key == 27) break;  // ESC to quit
 
-        if (key >= '1' && key <= '5') {
+        if (key >= '1' && key <= '8') {
             core.setDisplayMode(key - '0');
             std::cout << "Switched to mode " << (key - '0') << std::endl;
         } else if (key == 'd' || key == 'D') {
             bool new_state = !debug_enabled.load();
             debug_enabled = new_state;
             std::cout << "Debug info " << (new_state ? "enabled" : "disabled") << std::endl;
+        } else if (key == 'q' || key == 'Q') {
+            // Toggle panel mode (extend <-> repeat)
+            PanelMode current = core.getPanelMode();
+            PanelMode new_mode = (current == PanelMode::EXTEND) ? PanelMode::REPEAT : PanelMode::EXTEND;
+            core.setPanelMode(new_mode);
+            const char* mode_name = (new_mode == PanelMode::EXTEND) ? "EXTEND" : "REPEAT";
+            std::cout << "Panel layout mode: " << mode_name << std::endl;
+            if (new_mode == PanelMode::EXTEND) {
+                std::cout << "  (Image spans across all panels)" << std::endl;
+            } else {
+                std::cout << "  (Same image on each panel with different effects)" << std::endl;
+            }
+        } else if (key == 'a' || key == 'A') {
+            // Toggle auto-cycling
+            core.toggleAutoCycling();
+            bool enabled = core.isAutoCycling();
+            std::cout << "Auto-cycling " << (enabled ? "enabled" : "disabled") << std::endl;
+            if (enabled) {
+                std::cout << "  (Modes will automatically cycle every 3-7 seconds)" << std::endl;
+            }
         }
     }
 
