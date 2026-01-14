@@ -100,7 +100,7 @@ public:
             std::cout << "  (Multi-panel mode requires --led-chain > 1)" << std::endl;
         }
         std::cout << "\nOther controls:" << std::endl;
-        std::cout << "  a - Toggle auto-cycling (cycles through available effects)" << std::endl;
+        std::cout << "  a - Toggle auto-cycling (cycles through effects in current system mode)" << std::endl;
         std::cout << "  d - Toggle debug info (FPS and CPU temperature)" << std::endl;
         if (num_panels > 1) {
             std::cout << "  q - Toggle panel layout mode (extend <-> repeat)" << std::endl;

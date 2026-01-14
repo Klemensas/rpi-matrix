@@ -179,12 +179,12 @@ void AppCore::processEffect(Effect effect, const cv::Mat& in_bgr, cv::Mat& out_b
             break;
         case Effect::PROCEDURAL_SHAPES:
             if (procedural_shapes_effect_) {
-                procedural_shapes_effect_->process(out_bgr);
+                procedural_shapes_effect_->process(out_bgr, width_, height_);
             }
             break;
         case Effect::WAVE_PATTERNS:
             if (wave_patterns_effect_) {
-                wave_patterns_effect_->process(out_bgr);
+                wave_patterns_effect_->process(out_bgr, width_, height_);
             }
             break;
         case Effect::GEOMETRIC_ABSTRACTION:
@@ -640,25 +640,34 @@ void AppCore::processMultiPanel(const cv::Mat& in_bgr, cv::Mat& out_bgr) {
             }
         }
     } else {
-        // REPEAT mode: Show the same image on each panel with independent per-panel effects
-        // Each panel always gets its own state (including independent Mode 7 ghosting)
+        // REPEAT mode: Show the same image on each panel with different effects per panel
+        // Each panel gets a different effect automatically cycled through available effects
         for (int i = 0; i < num_panels_; i++) {
             int x_start = i * panel_width;
             int x_end = (i == num_panels_ - 1) ? in_bgr.cols : (i + 1) * panel_width;
             int current_panel_width = x_end - x_start;
-            
+
             // Resize input to single panel size
             cv::Mat resized_input;
             cv::resize(in_bgr, resized_input, cv::Size(current_panel_width, in_bgr.rows));
-            
-            // Use panel-specific effect if multi_panel_enabled, otherwise use global display_mode
-            int effect = individual_effects ? panel_effects_[i].load() : display_mode_.load();
-            
+
+            // In REPEAT mode, automatically assign different effects to each panel
+            // Get all valid effects for current system mode and cycle through them
+            std::vector<Effect> valid_effects = getValidEffectsForMode(getSystemMode());
+            if (valid_effects.empty()) {
+                valid_effects = {Effect::DEBUG};  // fallback
+            }
+
+            // Cycle through valid effects based on panel index
+            Effect panel_effect = valid_effects[i % valid_effects.size()];
+
+            // Convert effect enum to int for processPanelRegion
+            int effect_num = static_cast<int>(panel_effect);
+
             // Process the resized input with panel-specific effect
-            // (Mode 7 will use per-panel state via processPanelRegion for individual ghosting)
             cv::Mat processed_panel;
-            processPanelRegion(resized_input, processed_panel, effect, i);
-            
+            processPanelRegion(resized_input, processed_panel, effect_num, i);
+
             // Copy processed panel to output region
             cv::Rect panel_roi(x_start, 0, current_panel_width, in_bgr.rows);
             cv::Mat out_region = out_bgr(panel_roi);
@@ -780,7 +789,7 @@ void AppCore::processPanelRegion(const cv::Mat& in_region, cv::Mat& out_region, 
             // Procedural shapes (renumbered from 8) - generate for this panel region
             {
                 if (procedural_shapes_effect_) {
-                    procedural_shapes_effect_->process(out_region);
+                    procedural_shapes_effect_->process(out_region, w, h);
                 }
             }
             break;
@@ -788,7 +797,7 @@ void AppCore::processPanelRegion(const cv::Mat& in_region, cv::Mat& out_region, 
             // Wave patterns - generate for this panel region
             {
                 if (wave_patterns_effect_) {
-                    wave_patterns_effect_->process(out_region);
+                    wave_patterns_effect_->process(out_region, w, h);
                 }
             }
             break;
@@ -848,44 +857,77 @@ void AppCore::updateAutoCycling() {
 
     // Check if it's time to cycle
     if (cycle_frame_counter_ >= frames_until_next_mode_) {
-        // Get current system mode and effect
-        SystemMode current_system_mode = getSystemMode();
-        Effect current_effect = getEffect();
+        // In repeat mode, cycle effects on each panel individually
+        if (num_panels_ > 1 && getPanelMode() == PanelMode::REPEAT) {
+            // Cycle effects on each panel
+            for (int panel_index = 0; panel_index < num_panels_; panel_index++) {
+                // Get current effect for this panel
+                int current_effect_num = panel_effects_[panel_index].load();
+                Effect current_effect = static_cast<Effect>(current_effect_num);
 
-        // Get list of valid effects for current system mode
-        std::vector<Effect> valid_effects = getValidEffectsForMode(current_system_mode);
+                // Get all valid effects for current system mode
+                std::vector<Effect> valid_effects = getValidEffectsForMode(getSystemMode());
+                if (valid_effects.empty()) {
+                    valid_effects = {Effect::DEBUG};
+                }
 
-        // Find current effect in the list
-        auto it = std::find(valid_effects.begin(), valid_effects.end(), current_effect);
-        size_t current_index = (it != valid_effects.end()) ? std::distance(valid_effects.begin(), it) : 0;
+                // Find current effect in the list
+                auto it = std::find(valid_effects.begin(), valid_effects.end(), current_effect);
+                size_t current_index = (it != valid_effects.end()) ? std::distance(valid_effects.begin(), it) : 0;
 
-        // Cycle to next effect
-        size_t next_index = (current_index + 1) % valid_effects.size();
-        Effect next_effect = valid_effects[next_index];
+                // Cycle to next effect for this panel
+                size_t next_index = (current_index + 1) % valid_effects.size();
+                Effect next_effect = valid_effects[next_index];
 
-        const char* effect_names[] = {
-            "Debug View",
-            "Filled Silhouette",
-            "Outline Only",
-            "Motion Trails",
-            "Rainbow Motion Trails",
-            "Double Exposure",
-            "Procedural Shapes",
-            "Wave Patterns",
-            "Geometric Abstraction"
-        };
+                // Update the panel effect
+                panel_effects_[panel_index].store(static_cast<int>(next_effect));
+            }
 
-        const char* mode_names[] = {
-            "Ambient",
-            "Active"
-        };
+            const char* mode_names[] = {"Ambient", "Active"};
+            SystemMode current_mode = getSystemMode();
 
-        std::cout << "[AUTO-CYCLE] [" << mode_names[static_cast<int>(current_system_mode)] << "] Switching from Effect "
-                  << static_cast<int>(current_effect) << " (" << effect_names[static_cast<int>(current_effect) - 1] << ")"
-                  << " to Effect " << static_cast<int>(next_effect)
-                  << " (" << effect_names[static_cast<int>(next_effect) - 1] << ")" << std::endl;
+            std::cout << "[AUTO-CYCLE] [REPEAT MODE] All panels cycled to next effects ("
+                      << mode_names[static_cast<int>(current_mode)] << " mode)" << std::endl;
+        } else {
+            // Normal mode: cycle through effects within current system mode
+            SystemMode current_system_mode = getSystemMode();
+            Effect current_effect = getEffect();
 
-        setEffect(next_effect);
+            // Get list of valid effects for current system mode
+            std::vector<Effect> valid_effects = getValidEffectsForMode(current_system_mode);
+
+            // Find current effect in the list
+            auto it = std::find(valid_effects.begin(), valid_effects.end(), current_effect);
+            size_t current_index = (it != valid_effects.end()) ? std::distance(valid_effects.begin(), it) : 0;
+
+            // Cycle to next effect
+            size_t next_index = (current_index + 1) % valid_effects.size();
+            Effect next_effect = valid_effects[next_index];
+
+            const char* effect_names[] = {
+                "Debug View",
+                "Filled Silhouette",
+                "Outline Only",
+                "Motion Trails",
+                "Rainbow Motion Trails",
+                "Double Exposure",
+                "Procedural Shapes",
+                "Wave Patterns",
+                "Geometric Abstraction"
+            };
+
+            const char* mode_names[] = {
+                "Ambient",
+                "Active"
+            };
+
+            std::cout << "[AUTO-CYCLE] [" << mode_names[static_cast<int>(current_system_mode)] << "] Switching from Effect "
+                      << static_cast<int>(current_effect) << " (" << effect_names[static_cast<int>(current_effect) - 1] << ")"
+                      << " to Effect " << static_cast<int>(next_effect)
+                      << " (" << effect_names[static_cast<int>(next_effect) - 1] << ")" << std::endl;
+
+            setEffect(next_effect);
+        }
 
         // Start transition
         transition_frames_remaining_ = TRANSITION_FRAMES;

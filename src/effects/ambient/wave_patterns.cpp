@@ -17,16 +17,20 @@ void WavePatternsEffect::reset() {
 }
 
 // Effect 8: Wave Patterns (Ambient System Mode)
-void WavePatternsEffect::process(cv::Mat& out_bgr) {
-    out_bgr = cv::Mat::zeros(height_, width_, CV_8UC3);
+void WavePatternsEffect::process(cv::Mat& out_bgr, int target_width, int target_height) {
+    // Use target dimensions if provided, otherwise use default dimensions
+    int output_width = (target_width > 0) ? target_width : width_;
+    int output_height = (target_height > 0) ? target_height : height_;
+
+    out_bgr = cv::Mat::zeros(output_height, output_width, CV_8UC3);
 
     wave_time_ += 0.05f;
     wave_phase_ += 0.02f;
 
     // Optimize: Process at lower resolution then upscale for better performance
     // Process at half resolution for 4x speedup
-    int proc_w = width_ / 2;
-    int proc_h = height_ / 2;
+    int proc_w = output_width / 2;
+    int proc_h = output_height / 2;
     if (proc_w < 1) proc_w = 1;
     if (proc_h < 1) proc_h = 1;
 
@@ -59,8 +63,8 @@ void WavePatternsEffect::process(cv::Mat& out_bgr) {
         }
     }
 
-    // Upscale to full resolution
-    cv::resize(proc_frame, out_bgr, cv::Size(width_, height_), 0, 0, cv::INTER_LINEAR);
+    // Upscale to target resolution
+    cv::resize(proc_frame, out_bgr, cv::Size(output_width, output_height), 0, 0, cv::INTER_LINEAR);
 }
 
 // Helper function to convert HSV to BGR

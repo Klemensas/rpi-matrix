@@ -151,7 +151,7 @@ int main(int argc, char *argv[]) {
     std::cout << "  8 - Wave Patterns (→ Ambient)" << std::endl;
     std::cout << "  9 - Geometric Abstraction (→ Active)" << std::endl;
     std::cout << "\nOther controls:" << std::endl;
-    std::cout << "  a - Toggle auto-cycling (cycles through available effects)" << std::endl;
+    std::cout << "  a - Toggle auto-cycling (cycles through effects in current system mode)" << std::endl;
     if (chain_length > 1) {
         std::cout << "  § - Toggle multi-panel mode (apply different effects per panel)" << std::endl;
         std::cout << "  q - Toggle panel layout (extend: span image | repeat: same image)" << std::endl;
