@@ -73,17 +73,21 @@ public:
         setupKeyboardInput();
 
         std::cout << "Camera started. Displaying on LED matrix..." << std::endl;
-        std::cout << "Display modes:" << std::endl;
-        std::cout << "  1 - Default camera (pass-through)" << std::endl;
-        std::cout << "  2 - Transformed camera (filled silhouette)" << std::endl;
-        std::cout << "  3 - Outline only (wireframe)" << std::endl;
-        std::cout << "  4 - Motion Trails (Ghost Effect)" << std::endl;
-        std::cout << "  5 - Rainbow Motion Trails (camera + colorful movement paths)" << std::endl;
-        std::cout << "  6 - Double Exposure (time-based with randomization)" << std::endl;
-        std::cout << "  7 - Procedural Shapes (colorful morphing geometric shapes)" << std::endl;
-        std::cout << "  8 - Wave Patterns (interference patterns with multiple sine waves)" << std::endl;
-        std::cout << "  9 - Geometric Abstraction (low-poly geometric interpretation)" << std::endl;
-        std::cout << "\nMulti-Panel Mode (independent of display modes):" << std::endl;
+        std::cout << "System Modes:" << std::endl;
+        std::cout << "  m - Toggle system mode (Ambient <-> Active)" << std::endl;
+        std::cout << "     Ambient: Background effects (Procedural Shapes, Wave Patterns)" << std::endl;
+        std::cout << "     Active: Interactive effects (silhouettes, trails, etc.)" << std::endl;
+        std::cout << "\nEffects (automatically switch to appropriate mode):" << std::endl;
+        std::cout << "  1 - Debug View (pass-through)" << std::endl;
+        std::cout << "  2 - Filled Silhouette (→ Active)" << std::endl;
+        std::cout << "  3 - Outline Only (→ Active)" << std::endl;
+        std::cout << "  4 - Motion Trails (→ Active)" << std::endl;
+        std::cout << "  5 - Rainbow Motion Trails (→ Active)" << std::endl;
+        std::cout << "  6 - Double Exposure (→ Active)" << std::endl;
+        std::cout << "  7 - Procedural Shapes (→ Ambient)" << std::endl;
+        std::cout << "  8 - Wave Patterns (→ Ambient)" << std::endl;
+        std::cout << "  9 - Geometric Abstraction (→ Active)" << std::endl;
+        std::cout << "\nMulti-Panel Mode (independent of effects):" << std::endl;
         int num_panels = core_.getNumPanels();
         if (num_panels > 1) {
             std::cout << "  § - Toggle multi-panel mode and cycle target (P1";
@@ -96,11 +100,12 @@ public:
             std::cout << "  (Multi-panel mode requires --led-chain > 1)" << std::endl;
         }
         std::cout << "\nOther controls:" << std::endl;
+        std::cout << "  a - Toggle auto-cycling (cycles through available effects)" << std::endl;
         std::cout << "  d - Toggle debug info (FPS and CPU temperature)" << std::endl;
         if (num_panels > 1) {
             std::cout << "  q - Toggle panel layout mode (extend <-> repeat)" << std::endl;
         }
-        std::cout << "Press 1-9, §, d" << (num_panels > 1 ? ", q" : "") << "; Ctrl+C to stop" << std::endl;
+        std::cout << "Press 1-9, m, a, §, d" << (num_panels > 1 ? ", q" : "") << "; Ctrl+C to stop" << std::endl;
 
         // Keep running until interrupted
         while (running) {
@@ -220,8 +225,9 @@ private:
                             }
                         }
                     } else if (key >= '1' && key <= '9') {
-                        int effect = key - '0';
-                        
+                        int effect_num = key - '0';
+                        Effect effect = static_cast<Effect>(effect_num);
+
                         if (in_multi_panel) {
                             // Apply effect to current target panel(s)
                             int target = panel_target_.load();
@@ -229,31 +235,76 @@ private:
                             if (target == -1) {
                                 // Apply to all panels
                                 for (int i = 0; i < num_panels; i++) {
-                                    core_.setPanelEffect(i, effect);
+                                    core_.setPanelEffect(i, effect_num);
                                 }
-                                std::cout << "Applied effect " << effect << " to all panels" << std::endl;
+                                std::cout << "Applied effect " << effect_num << " to all panels" << std::endl;
                             } else {
                                 // Apply to specific panel
-                                core_.setPanelEffect(target, effect);
-                                std::cout << "Applied effect " << effect << " to Panel " << (target + 1) << std::endl;
+                                core_.setPanelEffect(target, effect_num);
+                                std::cout << "Applied effect " << effect_num << " to Panel " << (target + 1) << std::endl;
                             }
                         } else {
-                            // Regular mode switching (affects all panels uniformly)
-                            core_.setDisplayMode(effect);
-                            const char* mode_names[] = {
-                                "",
-                                "Default camera",
-                                "Transformed camera (filled silhouette)",
-                                "Outline only (wireframe)",
-                                "Motion Trails (Ghost Effect)",
+                            // Set effect and automatically switch to appropriate mode
+                            SystemMode current_mode = core_.getSystemMode();
+                            SystemMode appropriate_mode = core_.getAppropriateModeForEffect(effect);
+
+                            core_.setEffect(effect);
+
+                            const char* effect_names[] = {
+                                "Debug View",
+                                "Filled Silhouette",
+                                "Outline Only",
+                                "Motion Trails",
                                 "Rainbow Motion Trails",
                                 "Double Exposure",
                                 "Procedural Shapes",
                                 "Wave Patterns",
                                 "Geometric Abstraction"
                             };
-                            std::cout << "Switched to mode " << effect << ": " << mode_names[effect] << std::endl;
+
+                            const char* mode_names[] = {"Ambient", "Active"};
+
+                            std::cout << "Switched to effect " << effect_num << ": " << effect_names[effect_num - 1];
+
+                            // Only show mode change if it actually changed
+                            if (appropriate_mode != current_mode) {
+                                core_.setSystemMode(appropriate_mode);
+                                std::cout << " (switched to " << mode_names[static_cast<int>(appropriate_mode)] << " mode)";
+                            }
+                            std::cout << std::endl;
                         }
+                    } else if (key == 'm' || key == 'M') {
+                        // Toggle system mode
+                        SystemMode current_mode = core_.getSystemMode();
+                        SystemMode new_mode = (current_mode == SystemMode::AMBIENT) ? SystemMode::ACTIVE : SystemMode::AMBIENT;
+                        core_.setSystemMode(new_mode);
+
+                        const char* mode_names[] = {"Ambient", "Active"};
+                        const char* mode_descriptions[] = {
+                            "Procedural Shapes, Wave Patterns",
+                            "Interactive effects (silhouettes, trails, etc.)"
+                        };
+
+                        std::cout << "System mode: " << mode_names[static_cast<int>(new_mode)] << std::endl;
+                        std::cout << "  (" << mode_descriptions[static_cast<int>(new_mode)] << ")" << std::endl;
+
+                        // Set to a valid default effect for the new mode
+                        Effect default_effect = core_.getDefaultEffectForMode(new_mode);
+                        core_.setEffect(default_effect);
+
+                        const char* effect_names[] = {
+                            "Debug View",
+                            "Filled Silhouette",
+                            "Outline Only",
+                            "Motion Trails",
+                            "Rainbow Motion Trails",
+                            "Double Exposure",
+                            "Procedural Shapes",
+                            "Wave Patterns",
+                            "Geometric Abstraction"
+                        };
+                        std::cout << "  Default effect: " << static_cast<int>(default_effect)
+                                  << " (" << effect_names[static_cast<int>(default_effect) - 1] << ")" << std::endl;
                     } else if (key == 'd' || key == 'D') {
                         bool new_state = !debug_enabled_.load();
                         debug_enabled_ = new_state;

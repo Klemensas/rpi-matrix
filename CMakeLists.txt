@@ -22,6 +22,8 @@ message(STATUS "Found OpenCV: ${OpenCV_VERSION}")
 set(COMMON_SOURCES
     src/app/app_core.cpp
     src/components/debug_data_collector.cpp
+    src/effects/ambient/procedural_shapes.cpp
+    src/effects/ambient/wave_patterns.cpp
 )
 
 if(BUILD_RPI)

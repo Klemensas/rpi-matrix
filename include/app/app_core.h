@@ -4,8 +4,32 @@
 #include <atomic>
 #include <cstdint>
 #include <vector>
+#include <memory>
 #include <opencv2/core.hpp>
 #include <opencv2/video/background_segm.hpp>
+
+// Include effect class headers
+#include "effects/ambient/procedural_shapes.h"
+#include "effects/ambient/wave_patterns.h"
+
+// System modes
+enum class SystemMode {
+    AMBIENT,  // Shows ambient effects (7, 8)
+    ACTIVE    // Shows active effects (2-6, 9) - excludes debug effect 1
+};
+
+// Individual effects that can be displayed
+enum class Effect {
+    DEBUG = 1,       // Pass-through for debugging (special exception)
+    FILLED_SILHOUETTE = 2,
+    OUTLINE_ONLY = 3,
+    MOTION_TRAILS = 4,
+    RAINBOW_MOTION_TRAILS = 5,
+    DOUBLE_EXPOSURE = 6,
+    PROCEDURAL_SHAPES = 7,
+    WAVE_PATTERNS = 8,
+    GEOMETRIC_ABSTRACTION = 9
+};
 
 // Panel layout modes for multi-panel display
 enum class PanelMode {
@@ -19,6 +43,15 @@ class AppCore {
 public:
     explicit AppCore(int width, int height, int num_panels = 1);
 
+    // System mode controls
+    void setSystemMode(SystemMode mode);
+    SystemMode getSystemMode() const;
+
+    // Effect controls (renamed from display mode)
+    void setEffect(Effect effect);
+    Effect getEffect() const;
+
+    // Legacy method for backward compatibility - deprecated
     void setDisplayMode(int mode);
     int displayMode() const;
     
@@ -44,6 +77,11 @@ public:
     // - out_bgr: written as CV_8UC3 BGR image, same size as in_bgr
     void processFrame(const cv::Mat& in_bgr, cv::Mat& out_bgr);
 
+    // Effect validation and processing (public for keyboard input)
+    bool isEffectValidForMode(Effect effect, SystemMode mode) const;
+    Effect getDefaultEffectForMode(SystemMode mode) const;
+    SystemMode getAppropriateModeForEffect(Effect effect) const;
+
 private:
     void ensureSize(int w, int h);
 
@@ -53,8 +91,6 @@ private:
     void processMotionTrails(const cv::Mat& in_bgr, cv::Mat& out_bgr);
     void processRainbowTrails(const cv::Mat& in_bgr, cv::Mat& out_bgr);
     void processDoubleExposure(const cv::Mat& in_bgr, cv::Mat& out_bgr);
-    void processProceduralShapes(cv::Mat& out_bgr);
-    void processWavePatterns(cv::Mat& out_bgr);
     void processGeometricAbstraction(const cv::Mat& in_bgr, cv::Mat& out_bgr);
     void processMultiPanel(const cv::Mat& in_bgr, cv::Mat& out_bgr);
     
@@ -71,7 +107,16 @@ private:
     // Auto mode cycling (internal)
     void updateAutoCycling();
     int getRandomCycleInterval();
- 
+    std::vector<Effect> getValidEffectsForMode(SystemMode mode) const;
+
+private:
+    void processEffect(Effect effect, const cv::Mat& in_bgr, cv::Mat& out_bgr);
+
+    // System state
+    std::atomic<int> system_mode_{0};  // 0=AMBIENT, 1=ACTIVE
+    std::atomic<int> current_effect_{static_cast<int>(Effect::FILLED_SILHOUETTE)};  // Default to first active effect
+
+    // Legacy support - deprecated
     std::atomic<int> display_mode_{1};
     std::atomic<bool> multi_panel_enabled_{false};  // Multi-panel mode state
     std::atomic<int> panel_mode_{0};  // 0=EXTEND, 1=REPEAT (atomic for thread safety)
@@ -129,19 +174,10 @@ private:
     static constexpr int MIN_CYCLE_SECONDS = 3;
     static constexpr int MAX_CYCLE_SECONDS = 7;
     static constexpr int TRANSITION_FRAMES = 30;  // 1 second transition at 30fps
-    
-    // Procedural shapes state
-    int procedural_frame_counter_ = 0;
-    float procedural_time_ = 0.0f;
-    int current_shape_type_ = 0;  // 0=circle, 1=triangle, 2=square, 3=hexagon, 4=star
-    float shape_morph_progress_ = 0.0f;
-    float hue_shift_ = 0.0f;
-    float fill_mode_progress_ = 0.0f;  // 0.0 = outline only, 1.0 = filled
-    float color_morph_progress_ = 0.0f;  // For color morphing
-    
-    // Wave patterns state
-    float wave_time_ = 0.0f;
-    float wave_phase_ = 0.0f;
+
+    // Effect class instances
+    std::unique_ptr<ProceduralShapesEffect> procedural_shapes_effect_;
+    std::unique_ptr<WavePatternsEffect> wave_patterns_effect_;
 };
 
 #endif // APP_CORE_H

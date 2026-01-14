@@ -16,11 +16,31 @@ AppCore::AppCore(int width, int height, int num_panels)
       background_subtractor_(cv::createBackgroundSubtractorMOG2(500, 16, true)) {
     silhouette_frame_ = cv::Mat::zeros(height_, width_, CV_8UC3);
     trail_age_buffer_ = cv::Mat::zeros(height_, width_, CV_32FC1);  // Float buffer for age tracking
-    
+
     // Initialize panel effects to default (resources created lazily)
     for (int i = 0; i < num_panels_; i++) {
         panel_effects_[i].store(1);  // Default to pass-through
     }
+
+    // Initialize effect classes
+    procedural_shapes_effect_ = std::make_unique<ProceduralShapesEffect>(width_, height_);
+    wave_patterns_effect_ = std::make_unique<WavePatternsEffect>(width_, height_);
+}
+
+void AppCore::setSystemMode(SystemMode mode) {
+    system_mode_.store(static_cast<int>(mode));
+}
+
+SystemMode AppCore::getSystemMode() const {
+    return static_cast<SystemMode>(system_mode_.load());
+}
+
+void AppCore::setEffect(Effect effect) {
+    current_effect_.store(static_cast<int>(effect));
+}
+
+Effect AppCore::getEffect() const {
+    return static_cast<Effect>(current_effect_.load());
 }
 
 void AppCore::setDisplayMode(int mode) {
@@ -67,7 +87,7 @@ PanelMode AppCore::getPanelMode() const {
 void AppCore::processFrame(const cv::Mat& in_bgr, cv::Mat& out_bgr) {
     if (in_bgr.empty()) return;
     ensureSize(in_bgr.cols, in_bgr.rows);
-    
+
     // Update auto-cycling
     updateAutoCycling();
 
@@ -75,69 +95,104 @@ void AppCore::processFrame(const cv::Mat& in_bgr, cv::Mat& out_bgr) {
     // This happens when:
     // 1. Multi-panel mode is explicitly enabled (different effects per panel), OR
     // 2. We have multiple panels AND panel mode is REPEAT (same view, potentially different effects)
-    bool use_multi_panel = multi_panel_enabled_.load() || 
+    bool use_multi_panel = multi_panel_enabled_.load() ||
                           (num_panels_ > 1 && getPanelMode() == PanelMode::REPEAT);
-    
+
     if (use_multi_panel) {
         processMultiPanel(in_bgr, out_bgr);
         return;
     }
 
-    // Normal display modes (single panel or extend mode with same effect on all)
-    
-    // If in transition, we need to render both old and new modes
+    // Get current system mode and effect
+    SystemMode current_mode = getSystemMode();
+    Effect current_effect = getEffect();
+
+    // Validate effect is allowed in current mode, and adjust if necessary
+    bool effect_valid = isEffectValidForMode(current_effect, current_mode);
+    if (!effect_valid) {
+        // Set to a valid default effect for this mode
+        current_effect = getDefaultEffectForMode(current_mode);
+        setEffect(current_effect);
+    }
+
+    // Process based on current effect
+    processEffect(current_effect, in_bgr, out_bgr);
+}
+
+bool AppCore::isEffectValidForMode(Effect effect, SystemMode mode) const {
+    // All effects are now valid in all modes
+    return true;
+}
+
+Effect AppCore::getDefaultEffectForMode(SystemMode mode) const {
+    switch (mode) {
+        case SystemMode::AMBIENT:
+            return Effect::PROCEDURAL_SHAPES;  // Default to Procedural Shapes
+        case SystemMode::ACTIVE:
+            return Effect::FILLED_SILHOUETTE;  // Default to Filled Silhouette
+        default:
+            return Effect::DEBUG;  // Fallback
+    }
+}
+
+SystemMode AppCore::getAppropriateModeForEffect(Effect effect) const {
+    switch (effect) {
+        case Effect::PROCEDURAL_SHAPES:
+        case Effect::WAVE_PATTERNS:
+            return SystemMode::AMBIENT;
+        case Effect::DEBUG:
+            // Debug effect doesn't change mode - keep current mode
+            return getSystemMode();
+        default:
+            return SystemMode::ACTIVE;
+    }
+}
+
+void AppCore::processEffect(Effect effect, const cv::Mat& in_bgr, cv::Mat& out_bgr) {
+    // If in transition, we need to render both old and new effects
     if (transition_frames_remaining_ > 0) {
-        // Render previous mode to buffer
-        cv::Mat prev_output;
-        int saved_mode = display_mode_.load();
-        display_mode_ = previous_mode_;
-        
-        switch (previous_mode_) {
-            case 1: processPassThrough(in_bgr, prev_output); break;
-            case 2: processFilledSilhouette(in_bgr, prev_output); break;
-            case 3: processOutline(in_bgr, prev_output); break;
-            case 4: processMotionTrails(in_bgr, prev_output); break;
-            case 5: processRainbowTrails(in_bgr, prev_output); break;
-            case 6: processDoubleExposure(in_bgr, prev_output); break;
-            case 7: processProceduralShapes(prev_output); break;
-            case 8: processWavePatterns(prev_output); break;
-            case 9: processGeometricAbstraction(in_bgr, prev_output); break;
-            default: processPassThrough(in_bgr, prev_output); break;
-        }
-        
-        // Restore mode and render current mode
-        display_mode_ = saved_mode;
-        cv::Mat curr_output;
-        switch (saved_mode) {
-            case 1: processPassThrough(in_bgr, curr_output); break;
-            case 2: processFilledSilhouette(in_bgr, curr_output); break;
-            case 3: processOutline(in_bgr, curr_output); break;
-            case 4: processMotionTrails(in_bgr, curr_output); break;
-            case 5: processRainbowTrails(in_bgr, curr_output); break;
-            case 6: processDoubleExposure(in_bgr, curr_output); break;
-            case 7: processProceduralShapes(curr_output); break;
-            case 8: processWavePatterns(curr_output); break;
-            case 9: processGeometricAbstraction(in_bgr, curr_output); break;
-            default: processPassThrough(in_bgr, curr_output); break;
-        }
-        
-        // Blend based on transition progress
-        cv::addWeighted(prev_output, 1.0f - transition_alpha_, 
-                       curr_output, transition_alpha_, 0, out_bgr);
-    } else {
-        // No transition, just render current mode
-        switch (display_mode_.load()) {
-            case 1: processPassThrough(in_bgr, out_bgr); break;
-            case 2: processFilledSilhouette(in_bgr, out_bgr); break;
-            case 3: processOutline(in_bgr, out_bgr); break;
-            case 4: processMotionTrails(in_bgr, out_bgr); break;
-            case 5: processRainbowTrails(in_bgr, out_bgr); break;
-            case 6: processDoubleExposure(in_bgr, out_bgr); break;
-            case 7: processProceduralShapes(out_bgr); break;
-            case 8: processWavePatterns(out_bgr); break;
-            case 9: processGeometricAbstraction(in_bgr, out_bgr); break;
-            default: processPassThrough(in_bgr, out_bgr); break;
-        }
+        // For now, keep the old transition logic but adapt it to effects
+        // This would need more work to properly handle effect transitions
+        // For simplicity, just render the current effect
+        transition_frames_remaining_ = 0;  // Disable transitions for now
+    }
+
+    // Process the current effect
+    switch (effect) {
+        case Effect::DEBUG:
+            processPassThrough(in_bgr, out_bgr);
+            break;
+        case Effect::FILLED_SILHOUETTE:
+            processFilledSilhouette(in_bgr, out_bgr);
+            break;
+        case Effect::OUTLINE_ONLY:
+            processOutline(in_bgr, out_bgr);
+            break;
+        case Effect::MOTION_TRAILS:
+            processMotionTrails(in_bgr, out_bgr);
+            break;
+        case Effect::RAINBOW_MOTION_TRAILS:
+            processRainbowTrails(in_bgr, out_bgr);
+            break;
+        case Effect::DOUBLE_EXPOSURE:
+            processDoubleExposure(in_bgr, out_bgr);
+            break;
+        case Effect::PROCEDURAL_SHAPES:
+            if (procedural_shapes_effect_) {
+                procedural_shapes_effect_->process(out_bgr);
+            }
+            break;
+        case Effect::WAVE_PATTERNS:
+            if (wave_patterns_effect_) {
+                wave_patterns_effect_->process(out_bgr);
+            }
+            break;
+        case Effect::GEOMETRIC_ABSTRACTION:
+            processGeometricAbstraction(in_bgr, out_bgr);
+            break;
+        default:
+            processPassThrough(in_bgr, out_bgr);
+            break;
     }
 }
 
@@ -321,174 +376,7 @@ void AppCore::processDoubleExposure(const cv::Mat& in_bgr, cv::Mat& out_bgr) {
                                    background_subtractor_);
 }
 
-void AppCore::processProceduralShapes(cv::Mat& out_bgr) {
-    // Initialize output with black background
-    out_bgr = cv::Mat::zeros(height_, width_, CV_8UC3);
-    
-    procedural_frame_counter_++;
-    procedural_time_ = procedural_frame_counter_ * 0.016f;  // ~30fps
-    
-    // Slowly morph colors over time (slowed by half)
-    color_morph_progress_ = fmod(procedural_time_ * 0.25f, 1.0f);  // Full cycle every 4 seconds
-    float base_hue = fmod(procedural_time_ * 5.0f, 360.0f);  // Slow hue rotation (half speed)
-    
-    // Morph between shapes (slowed by half)
-    if (shape_morph_progress_ >= 1.0f) {
-        current_shape_type_ = (current_shape_type_ + 1) % 5;
-        shape_morph_progress_ = 0.0f;
-    }
-    shape_morph_progress_ = std::min(1.0f, shape_morph_progress_ + 0.0075f);  // Half speed
-    
-    // Alternate between filled and outline-only (slow cycle, half speed)
-    fill_mode_progress_ = 0.5f + 0.5f * std::sin(procedural_time_ * 0.15f);  // 0.0 to 1.0
-    
-    // Diagonal scroll speed (slow, linear movement)
-    float scroll_speed = 0.8f;  // pixels per frame
-    float scroll_x = fmod(procedural_time_ * scroll_speed * 30.0f, width_);
-    float scroll_y = fmod(procedural_time_ * scroll_speed * 30.0f, height_);
-    
-    // Get tessellation parameters for current and next shape
-    int current_shape = current_shape_type_;
-    int next_shape = (current_shape + 1) % 5;
-    
-    // Helper function to get tessellation params for a shape
-    auto getTessellationParams = [this](int shape_type) -> std::pair<float, bool> {
-        float size_factor;
-        bool hex_tiling;
-        
-        switch (shape_type) {
-            case 0: // Circle
-                size_factor = 0.12f;
-                hex_tiling = true;
-                break;
-            case 1: // Triangle
-                size_factor = 0.14f;
-                hex_tiling = true;
-                break;
-            case 2: // Square
-                size_factor = 0.11f;
-                hex_tiling = false;
-                break;
-            case 3: // Hexagon
-                size_factor = 0.13f;
-                hex_tiling = true;
-                break;
-            case 4: // Star
-                size_factor = 0.12f;
-                hex_tiling = false;
-                break;
-            default:
-                size_factor = 0.12f;
-                hex_tiling = true;
-        }
-        return std::make_pair(size_factor, hex_tiling);
-    };
-    
-    // Get parameters for current and next shape
-    auto [current_size_factor, current_hex] = getTessellationParams(current_shape);
-    auto [next_size_factor, next_hex] = getTessellationParams(next_shape);
-    
-    // Interpolate between current and next tessellation parameters
-    float size_factor = current_size_factor + (next_size_factor - current_size_factor) * shape_morph_progress_;
-    float shape_size = std::min(width_, height_) * size_factor;
-    
-    // Interpolate hex tiling (0.0 = square grid, 1.0 = hex grid)
-    float hex_tiling_factor = current_hex ? (1.0f - shape_morph_progress_) : shape_morph_progress_;
-    if (current_hex && next_hex) hex_tiling_factor = 1.0f;
-    if (!current_hex && !next_hex) hex_tiling_factor = 0.0f;
-    
-    // Calculate radius with 1-pixel padding between shapes
-    // For hex tiling: radius = (shape_size - 1) / 2, for square: radius = (shape_size - 1) / 2
-    float radius_factor = (hex_tiling_factor > 0.5f) ? 0.5f : 0.5f;
-    int radius = (int)((shape_size - 1.0f) * radius_factor);  // -1 for 1-pixel padding
-    
-    // Calculate grid dimensions - ensure we have enough to fill the screen
-    int cols = (int)(width_ / shape_size) + 4;
-    
-    // Calculate rows needed to fill height completely
-    // Account for hex offset which can create gaps
-    float row_spacing = shape_size;
-    if (hex_tiling_factor > 0.5f) {
-        // Hex tiling: vertical spacing is shape_size * sqrt(3)/2, but we use shape_size for simplicity
-        // Add extra rows to compensate for hex offset
-        row_spacing = shape_size * 0.866f;  // sqrt(3)/2 approximation
-    }
-    
-    int base_rows = (int)(height_ / row_spacing);
-    // Add extra rows to ensure bottom is filled (account for gaps)
-    int extra_rows = std::max(2, (int)((height_ - base_rows * row_spacing) / row_spacing) + 2);
-    int rows = base_rows + extra_rows + 4;  // Extra padding for scrolling
-    
-    for (int row = -1; row < rows; row++) {
-        for (int col = -1; col < cols; col++) {
-            // Calculate base position for current shape tessellation
-            float current_base_x = col * (std::min(width_, height_) * current_size_factor) + 
-                                   (std::min(width_, height_) * current_size_factor) / 2.0f;
-            float current_base_y = row * (std::min(width_, height_) * current_size_factor) + 
-                                   (std::min(width_, height_) * current_size_factor) / 2.0f;
-            
-            // Apply hexagonal offset for current shape
-            if (current_hex && row % 2 == 1) {
-                current_base_x += (std::min(width_, height_) * current_size_factor) * 0.5f;
-            }
-            
-            // Calculate base position for next shape tessellation
-            float next_base_x = col * (std::min(width_, height_) * next_size_factor) + 
-                                (std::min(width_, height_) * next_size_factor) / 2.0f;
-            float next_base_y = row * (std::min(width_, height_) * next_size_factor) + 
-                                (std::min(width_, height_) * next_size_factor) / 2.0f;
-            
-            // Apply hexagonal offset for next shape
-            if (next_hex && row % 2 == 1) {
-                next_base_x += (std::min(width_, height_) * next_size_factor) * 0.5f;
-            }
-            
-            // Interpolate between current and next positions for smooth transition
-            float base_x = current_base_x + (next_base_x - current_base_x) * shape_morph_progress_;
-            float base_y = current_base_y + (next_base_y - current_base_y) * shape_morph_progress_;
-            
-            // Apply smooth linear diagonal scroll
-            float center_x = base_x - scroll_x;
-            float center_y = base_y - scroll_y;
-            
-            // Wrap around for infinite scroll
-            float wrap_size = shape_size * 2.0f;
-            while (center_x < -wrap_size) center_x += width_ + wrap_size * 2;
-            while (center_x > width_ + wrap_size) center_x -= width_ + wrap_size * 2;
-            while (center_y < -wrap_size) center_y += height_ + wrap_size * 2;
-            while (center_y > height_ + wrap_size) center_y -= height_ + wrap_size * 2;
-            
-            // Skip if completely outside visible bounds (with some margin for wrapping)
-            if (center_x < -radius - 5 || center_x > width_ + radius + 5 ||
-                center_y < -radius - 5 || center_y > height_ + radius + 5) {
-                continue;
-            }
-            
-            // Only draw if shape is at least partially visible
-            if (center_x + radius < 0 || center_x - radius > width_ ||
-                center_y + radius < 0 || center_y - radius > height_) {
-                continue;
-            }
-            
-            // Color morphing: interpolate between two hues based on position and time
-            float hue1 = fmod(base_hue + (row * 25.0f) + (col * 18.0f), 360.0f);
-            float hue2 = fmod(base_hue + 120.0f + (row * 25.0f) + (col * 18.0f), 360.0f);
-            float current_hue = hue1 + (hue2 - hue1) * color_morph_progress_;
-            if (current_hue < 0) current_hue += 360.0f;
-            if (current_hue >= 360.0f) current_hue -= 360.0f;
-            
-            // Slightly vary saturation and value for visual interest
-            float sat = 0.85f + 0.1f * std::sin(procedural_time_ * 0.4f + row + col);
-            float val = 0.9f + 0.1f * std::cos(procedural_time_ * 0.3f + row - col);
-            cv::Scalar color = hsvToBgr(current_hue, sat, val);
-            
-            // Draw shape with morphing and fill/outline mode
-            drawMorphingShape(out_bgr, (int)center_x, (int)center_y, radius, 
-                             current_shape_type_, shape_morph_progress_, 
-                             color, fill_mode_progress_);
-        }
-    }
-}
+
 
 // Helper function to convert HSV to BGR
 cv::Scalar AppCore::hsvToBgr(float h, float s, float v) {
@@ -728,13 +616,9 @@ void AppCore::processMultiPanel(const cv::Mat& in_bgr, cv::Mat& out_bgr) {
                     processed_full(panel_roi).copyTo(out_region);
                 } else if (effect == 8) {
                     // Procedural shapes - generate for this panel region
-                    int saved_w = width_;
-                    int saved_h = height_;
-                    width_ = out_region.cols;
-                    height_ = out_region.rows;
-                    processProceduralShapes(out_region);
-                    width_ = saved_w;
-                    height_ = saved_h;
+                    if (procedural_shapes_effect_) {
+                        procedural_shapes_effect_->process(out_region);
+                    }
                 } else {
                     // Use standard processing for other effects
                     cv::Mat in_region = in_bgr(panel_roi);
@@ -895,29 +779,17 @@ void AppCore::processPanelRegion(const cv::Mat& in_region, cv::Mat& out_region, 
         case 7:
             // Procedural shapes (renumbered from 8) - generate for this panel region
             {
-                // Temporarily set size to panel region size
-                int saved_w = width_;
-                int saved_h = height_;
-                width_ = w;
-                height_ = h;
-                
-                processProceduralShapes(out_region);
-                
-                // Restore size
-                width_ = saved_w;
-                height_ = saved_h;
+                if (procedural_shapes_effect_) {
+                    procedural_shapes_effect_->process(out_region);
+                }
             }
             break;
         case 8:
             // Wave patterns - generate for this panel region
             {
-                int saved_w = width_;
-                int saved_h = height_;
-                width_ = w;
-                height_ = h;
-                processWavePatterns(out_region);
-                width_ = saved_w;
-                height_ = saved_h;
+                if (wave_patterns_effect_) {
+                    wave_patterns_effect_->process(out_region);
+                }
             }
             break;
         case 9:
@@ -958,9 +830,9 @@ void AppCore::updateAutoCycling() {
     if (!auto_cycling_enabled_) {
         return;
     }
-    
+
     cycle_frame_counter_++;
-    
+
     // Update transition if in progress
     if (transition_frames_remaining_ > 0) {
         transition_frames_remaining_--;
@@ -968,23 +840,30 @@ void AppCore::updateAutoCycling() {
         transition_alpha_ = 1.0f - ((float)transition_frames_remaining_ / TRANSITION_FRAMES);
         return;
     }
-    
+
     // Initialize on first run
     if (frames_until_next_mode_ == 0) {
         frames_until_next_mode_ = getRandomCycleInterval();
     }
-    
+
     // Check if it's time to cycle
     if (cycle_frame_counter_ >= frames_until_next_mode_) {
-        // Save current mode as previous
-        previous_mode_ = display_mode_.load();
-        
-        // Cycle to next mode (1->2->3->4->5->6->7->8->9->1)
-        int current = display_mode_.load();
-        int next_mode = (current % 9) + 1;
-        
-        const char* mode_names[] = {
-            "",
+        // Get current system mode and effect
+        SystemMode current_system_mode = getSystemMode();
+        Effect current_effect = getEffect();
+
+        // Get list of valid effects for current system mode
+        std::vector<Effect> valid_effects = getValidEffectsForMode(current_system_mode);
+
+        // Find current effect in the list
+        auto it = std::find(valid_effects.begin(), valid_effects.end(), current_effect);
+        size_t current_index = (it != valid_effects.end()) ? std::distance(valid_effects.begin(), it) : 0;
+
+        // Cycle to next effect
+        size_t next_index = (current_index + 1) % valid_effects.size();
+        Effect next_effect = valid_effects[next_index];
+
+        const char* effect_names[] = {
             "Debug View",
             "Filled Silhouette",
             "Outline Only",
@@ -995,22 +874,51 @@ void AppCore::updateAutoCycling() {
             "Wave Patterns",
             "Geometric Abstraction"
         };
-        
-        std::cout << "[AUTO-CYCLE] Switching from Effect " << current 
-                  << " (" << (current < 10 ? mode_names[current] : "Unknown") << ")"
-                  << " to Effect " << next_mode 
-                  << " (" << (next_mode < 10 ? mode_names[next_mode] : "Unknown") << ")" << std::endl;
-        
-        display_mode_ = next_mode;
-        
+
+        const char* mode_names[] = {
+            "Ambient",
+            "Active"
+        };
+
+        std::cout << "[AUTO-CYCLE] [" << mode_names[static_cast<int>(current_system_mode)] << "] Switching from Effect "
+                  << static_cast<int>(current_effect) << " (" << effect_names[static_cast<int>(current_effect) - 1] << ")"
+                  << " to Effect " << static_cast<int>(next_effect)
+                  << " (" << effect_names[static_cast<int>(next_effect) - 1] << ")" << std::endl;
+
+        setEffect(next_effect);
+
         // Start transition
         transition_frames_remaining_ = TRANSITION_FRAMES;
         transition_alpha_ = 0.0f;
-        
+
         // Reset counter and get new random interval
         cycle_frame_counter_ = 0;
         frames_until_next_mode_ = getRandomCycleInterval();
     }
+}
+
+std::vector<Effect> AppCore::getValidEffectsForMode(SystemMode mode) const {
+    std::vector<Effect> valid_effects;
+
+    switch (mode) {
+        case SystemMode::AMBIENT:
+            // Ambient mode: Procedural Shapes and Wave Patterns
+            valid_effects = {Effect::PROCEDURAL_SHAPES, Effect::WAVE_PATTERNS};
+            break;
+        case SystemMode::ACTIVE:
+            // Active mode: All effects except DEBUG, PROCEDURAL_SHAPES, and WAVE_PATTERNS
+            valid_effects = {
+                Effect::FILLED_SILHOUETTE,
+                Effect::OUTLINE_ONLY,
+                Effect::MOTION_TRAILS,
+                Effect::RAINBOW_MOTION_TRAILS,
+                Effect::DOUBLE_EXPOSURE,
+                Effect::GEOMETRIC_ABSTRACTION
+            };
+            break;
+    }
+
+    return valid_effects;
 }
 
 int AppCore::getRandomCycleInterval() {
@@ -1030,52 +938,7 @@ void AppCore::toggleAutoCycling() {
     }
 }
 
-// Effect 8: Wave Patterns (Ambient System Mode)
-void AppCore::processWavePatterns(cv::Mat& out_bgr) {
-    out_bgr = cv::Mat::zeros(height_, width_, CV_8UC3);
-    
-    wave_time_ += 0.05f;
-    wave_phase_ += 0.02f;
-    
-    // Optimize: Process at lower resolution then upscale for better performance
-    // Process at half resolution for 4x speedup
-    int proc_w = width_ / 2;
-    int proc_h = height_ / 2;
-    if (proc_w < 1) proc_w = 1;
-    if (proc_h < 1) proc_h = 1;
-    
-    cv::Mat proc_frame(proc_h, proc_w, CV_8UC3);
-    
-    // Create interference pattern with multiple waves at reduced resolution
-    for (int y = 0; y < proc_h; y++) {
-        for (int x = 0; x < proc_w; x++) {
-            // Scale coordinates back to original size for wave calculations
-            float fx = (x * 2.0f) * 0.1f;
-            float fy = (y * 2.0f) * 0.1f;
-            
-            // Multiple sine waves for interference
-            float wave1 = std::sin(fx + wave_time_);
-            float wave2 = std::sin(fy + wave_time_ * 1.3f);
-            float wave3 = std::sin((fx + fy) * 0.07f + wave_phase_);
-            
-            float combined = (wave1 + wave2 + wave3) / 3.0f;
-            
-            // Map to color (hue based on position, brightness based on wave)
-            float hue = fmod((fx + fy) * 10.0f + wave_time_ * 20.0f, 360.0f);
-            float brightness = (combined + 1.0f) * 0.5f;  // Normalize to 0-1
-            cv::Scalar color = hsvToBgr(hue, 1.0f, brightness);
-            
-            proc_frame.at<cv::Vec3b>(y, x) = cv::Vec3b(
-                static_cast<uint8_t>(color[0]),
-                static_cast<uint8_t>(color[1]),
-                static_cast<uint8_t>(color[2])
-            );
-        }
-    }
-    
-    // Upscale to full resolution
-    cv::resize(proc_frame, out_bgr, cv::Size(width_, height_), 0, 0, cv::INTER_LINEAR);
-}
+
 
 // Effect 9: Geometric Abstraction (Active System Mode - Interpretation-based)
 void AppCore::processGeometricAbstraction(const cv::Mat& in_bgr, cv::Mat& out_bgr) {
