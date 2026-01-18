@@ -24,6 +24,7 @@ set(COMMON_SOURCES
     src/components/debug_data_collector.cpp
     src/effects/ambient/procedural_shapes.cpp
     src/effects/ambient/wave_patterns.cpp
+    src/effects/ambient/mandelbrot_root_veins.cpp
 )
 
 if(BUILD_RPI)

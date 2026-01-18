@@ -12,8 +12,8 @@
 #   sudo ./benchmarks/benchmark.sh --quick      Quick test (fewer effects)
 #
 # What it tests:
-#   - All 9 effects in EXTEND mode (default)
-#   - All 9 effects in REPEAT mode (multi-view)
+#   - All 10 effects in EXTEND mode (default)
+#   - All 10 effects in REPEAT mode (multi-view)
 #   - Panel mode switching performance
 #
 # =============================================================================
@@ -59,6 +59,7 @@ declare -a EFFECTS=(
     "7:Procedural Shapes"
     "8:Wave Patterns"
     "9:Geometric Abstraction"
+    "10:Mandelbrot Root Veins"
 )
 
 # Quick mode - test subset of effects
@@ -68,6 +69,7 @@ declare -a QUICK_EFFECTS=(
     "5:Rainbow Motion Trails"
     "7:Procedural Shapes"
     "8:Wave Patterns"
+    "10:Mandelbrot Root Veins"
 )
 
 print_header() {
@@ -110,6 +112,7 @@ extract_fps() {
     local tmpfile=$1
     local start_line=$2
     
+    # Match "FPS: X" format from application output
     local fps_values=$(tail -n +$((start_line + 1)) "${tmpfile}" | grep -oP 'FPS: \K[0-9]+' | tail -n +2)
     
     local sum=0
@@ -159,7 +162,7 @@ run_benchmark() {
         --sensor-width ${SENSOR_WIDTH} \
         --sensor-height ${SENSOR_HEIGHT} \
         --led-chain ${LED_CHAIN} \
-        --fps < "$fifo" > "${tmpfile}" 2>&1 &
+        < "$fifo" > "${tmpfile}" 2>&1 &
     local app_pid=$!
     
     # Open fifo for writing

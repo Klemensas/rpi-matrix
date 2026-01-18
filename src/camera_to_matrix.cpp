@@ -123,11 +123,6 @@ private:
     void processFrame(uint8_t *data, int width, int height) {
         bool debug = debug_enabled_.load();
         
-        // Only update debug data collection when debug mode is enabled
-        if (debug) {
-            debug_data_collector_.recordFrame();
-        }
-        
         // Create overlay callback if debug is enabled
         std::function<void(FrameCanvas*)> overlay_callback = nullptr;
         if (debug && debug_overlay_.isReady()) {
@@ -146,6 +141,16 @@ private:
         core_.processFrame(in_bgr, out_bgr);
         if (!out_bgr.empty()) {
             matrix_.displayFrame(out_bgr.data, out_bgr.cols, out_bgr.rows, overlay_callback);
+        }
+        
+        // Record frame AFTER displayFrame to measure full pipeline (camera + processing + matrix draw)
+        debug_data_collector_.recordFrame();
+        
+        // Print FPS to stdout periodically for benchmark parsing
+        static int fps_print_counter = 0;
+        if (++fps_print_counter >= 30) {  // Print every ~30 frames (~1 second)
+            std::cout << "FPS: " << static_cast<int>(debug_data_collector_.getFPS()) << std::endl;
+            fps_print_counter = 0;
         }
     }
 
