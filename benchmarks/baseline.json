@@ -1,0 +1,14 @@
+{
+  "benchmark_info": {
+    "type": "realworld",
+    "width": 576,
+    "height": 192,
+    "led_chain": 3,
+    "seconds_per_effect": 6
+  },
+  "results": {
+    "extend": [{"effect_id":1,"effect_name":"Debug (Pass-through)","avg_fps":55},{"effect_id":2,"effect_name":"Filled Silhouette","avg_fps":38},{"effect_id":3,"effect_name":"Outline Only","avg_fps":38},{"effect_id":4,"effect_name":"Motion Trails","avg_fps":38},{"effect_id":5,"effect_name":"Rainbow Motion Trails","avg_fps":31},{"effect_id":6,"effect_name":"Double Exposure","avg_fps":29},{"effect_id":7,"effect_name":"Procedural Shapes","avg_fps":33},{"effect_id":8,"effect_name":"Wave Patterns","avg_fps":52},{"effect_id":9,"effect_name":"Geometric Abstraction","avg_fps":38}],
+    "repeat": [{"effect_id":1,"effect_name":"Debug (Pass-through)","avg_fps":39},{"effect_id":2,"effect_name":"Filled Silhouette","avg_fps":38},{"effect_id":3,"effect_name":"Outline Only","avg_fps":30},{"effect_id":4,"effect_name":"Motion Trails","avg_fps":32},{"effect_id":5,"effect_name":"Rainbow Motion Trails","avg_fps":36},{"effect_id":6,"effect_name":"Double Exposure","avg_fps":39},{"effect_id":7,"effect_name":"Procedural Shapes","avg_fps":38},{"effect_id":8,"effect_name":"Wave Patterns","avg_fps":39},{"effect_id":9,"effect_name":"Geometric Abstraction","avg_fps":38}],
+    "multi_panel_fps": 36
+  }
+}
