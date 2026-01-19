@@ -87,6 +87,7 @@ public:
         std::cout << "  7 - Procedural Shapes (→ Ambient)" << std::endl;
         std::cout << "  8 - Wave Patterns (→ Ambient)" << std::endl;
         std::cout << "  9 - Geometric Abstraction (→ Active)" << std::endl;
+        std::cout << "  0 - Mandelbrot Root Veins (→ Ambient)" << std::endl;
         std::cout << "\nMulti-Panel Mode (independent of effects):" << std::endl;
         int num_panels = core_.getNumPanels();
         if (num_panels > 1) {
@@ -229,8 +230,9 @@ private:
                                 }
                             }
                         }
-                    } else if (key >= '1' && key <= '9') {
+                    } else if (key >= '0' && key <= '9') {
                         int effect_num = key - '0';
+                        if (effect_num == 0) effect_num = 10;  // 0 key maps to effect 10 (Mandelbrot)
                         Effect effect = static_cast<Effect>(effect_num);
 
                         if (in_multi_panel) {
@@ -264,7 +266,8 @@ private:
                                 "Double Exposure",
                                 "Procedural Shapes",
                                 "Wave Patterns",
-                                "Geometric Abstraction"
+                                "Geometric Abstraction",
+                                "Mandelbrot Root Veins"  // Add mandelbrot to the effect names array
                             };
 
                             const char* mode_names[] = {"Ambient", "Active"};

@@ -2,6 +2,7 @@
 #include <cmath>
 #include <cstdlib>
 #include <algorithm>
+#include <iostream>
 #include <opencv2/imgproc.hpp>
 
 #ifndef M_PI
@@ -241,14 +242,12 @@ void MandelbrotRootVeinsEffect::updateWilting(float dt) {
             }
         }
     }
-    
-    // Remove fully wilted segments periodically
+
+    // Remove fully wilted segments periodically (but safely)
     if (static_cast<int>(time_ * 10) % 50 == 0) {
-        segments_.erase(
-            std::remove_if(segments_.begin(), segments_.end(),
-                [](const VeinSegment& s) { return s.wilt_progress >= 1.0f && s.generation > 0; }),
-            segments_.end()
-        );
+        auto it = std::remove_if(segments_.begin(), segments_.end(),
+            [](const VeinSegment& s) { return s.wilt_progress >= 1.0f && s.generation > 0; });
+        segments_.erase(it, segments_.end());
     }
 }
 
@@ -325,18 +324,34 @@ void MandelbrotRootVeinsEffect::renderVeins(cv::Mat& frame) {
 }
 
 void MandelbrotRootVeinsEffect::process(cv::Mat& out_bgr, int target_width, int target_height) {
+    // Safety check for invalid dimensions
+    if (width_ <= 0 || height_ <= 0) {
+        out_bgr = cv::Mat::zeros(480, 640, CV_8UC3);
+        return;
+    }
+
     int output_width = (target_width > 0) ? target_width : width_;
     int output_height = (target_height > 0) ? target_height : height_;
-    
+
+    // More safety checks
+    if (output_width <= 0 || output_height <= 0) {
+        output_width = 640;
+        output_height = 480;
+    }
+
     float dt = 1.0f / 30.0f;  // Assume ~30fps
     time_ += dt;
-    
-    // Update zoom and rotation
-    zoom_ *= (1.0f + ZOOM_RATE);
+
+    // Update zoom and rotation with safety checks
+    if (zoom_ > 0.0f) {
+        zoom_ *= (1.0f + ZOOM_RATE);
+    } else {
+        zoom_ = 1.0f;
+    }
     rotation_ += ROTATION_RATE;
-    
+
     // Reset zoom periodically to prevent infinite zoom
-    if (zoom_ > 2.0f) {
+    if (zoom_ > 2.0f || zoom_ <= 0.0f) {
         zoom_ = 1.0f;
         rotation_ = 0.0f;
         // Optionally reinitialize for fresh growth
@@ -344,33 +359,43 @@ void MandelbrotRootVeinsEffect::process(cv::Mat& out_bgr, int target_width, int 
             reset();
         }
     }
-    
+
     // Grow veins
     growVeins(dt);
-    
+
     // Check intersections periodically (expensive)
     if (static_cast<int>(time_ * 30) % 5 == 0) {
         checkIntersections();
     }
-    
+
     // Update wilting
     updateWilting(dt);
-    
+
     // Process at half resolution for performance
     int proc_w = output_width / 2;
     int proc_h = output_height / 2;
     if (proc_w < 1) proc_w = 1;
     if (proc_h < 1) proc_h = 1;
-    
-    proc_frame_ = cv::Mat::zeros(proc_h, proc_w, CV_8UC3);
-    
-    // Render veins
-    renderVeins(proc_frame_);
-    
-    // Apply glow effect via blur and additive blend
-    cv::GaussianBlur(proc_frame_, glow_frame_, cv::Size(7, 7), 2.0);
-    cv::addWeighted(proc_frame_, 1.0, glow_frame_, 0.6, 0, proc_frame_);
-    
-    // Upscale to output resolution
-    cv::resize(proc_frame_, out_bgr, cv::Size(output_width, output_height), 0, 0, cv::INTER_LINEAR);
+
+    try {
+        proc_frame_ = cv::Mat::zeros(proc_h, proc_w, CV_8UC3);
+
+        // Render veins
+        renderVeins(proc_frame_);
+
+        // Apply glow effect via blur and additive blend
+        cv::GaussianBlur(proc_frame_, glow_frame_, cv::Size(7, 7), 2.0);
+        cv::addWeighted(proc_frame_, 1.0, glow_frame_, 0.6, 0, proc_frame_);
+
+        // Upscale to output resolution
+        cv::resize(proc_frame_, out_bgr, cv::Size(output_width, output_height), 0, 0, cv::INTER_LINEAR);
+    } catch (const cv::Exception& e) {
+        // If OpenCV operations fail, return a safe fallback
+        std::cerr << "OpenCV error in mandelbrot effect: " << e.what() << std::endl;
+        out_bgr = cv::Mat::zeros(output_height, output_width, CV_8UC3);
+    } catch (...) {
+        // Catch any other exceptions
+        std::cerr << "Unknown error in mandelbrot effect" << std::endl;
+        out_bgr = cv::Mat::zeros(output_height, output_width, CV_8UC3);
+    }
 }
