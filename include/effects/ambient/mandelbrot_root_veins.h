@@ -35,6 +35,9 @@ private:
     // Mandelbrot-inspired direction calculation
     float getMandelbrotDirection(float x, float y, float base_angle);
     
+    // Noise function for organic variation
+    float noise(float x, float y, float z);
+    
     // Rendering
     void renderVeins(cv::Mat& frame);
     float getSegmentBrightness(const VeinSegment& seg);
@@ -61,7 +64,7 @@ private:
     cv::Mat glow_frame_;
     
     // Configuration
-    static constexpr int MAX_SEGMENTS = 800;         // More segments for denser veins
+    static constexpr int MAX_SEGMENTS = 1200;        // More segments for denser veins (32 starting)
     static constexpr float GROWTH_SPEED = 3.0f;      // Pixels per frame at base
     static constexpr float WILT_SPEED = 0.02f;       // Wilt progress per frame
     static constexpr float ZOOM_RATE = 0.0002f;      // Zoom multiplier per frame
