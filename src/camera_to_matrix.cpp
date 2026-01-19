@@ -106,7 +106,7 @@ public:
         if (num_panels > 1) {
             std::cout << "  q - Toggle panel layout mode (extend <-> repeat)" << std::endl;
         }
-        std::cout << "Press 1-9, m, a, §, d" << (num_panels > 1 ? ", q" : "") << "; Ctrl+C to stop" << std::endl;
+        std::cout << "Press 0-9, m, a, §, d" << (num_panels > 1 ? ", q" : "") << "; Ctrl+C to stop" << std::endl;
 
         // Keep running until interrupted
         while (running) {

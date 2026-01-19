@@ -62,7 +62,7 @@ private:
     
     // Configuration
     static constexpr int MAX_SEGMENTS = 300;
-    static constexpr float GROWTH_SPEED = 1.5f;      // Pixels per frame at base
+    static constexpr float GROWTH_SPEED = 3.0f;      // Pixels per frame at base
     static constexpr float WILT_SPEED = 0.03f;       // Wilt progress per frame
     static constexpr float ZOOM_RATE = 0.0002f;      // Zoom multiplier per frame
     static constexpr float ROTATION_RATE = 0.002f;   // Radians per frame

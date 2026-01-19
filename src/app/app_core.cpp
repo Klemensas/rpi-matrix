@@ -951,7 +951,7 @@ std::vector<Effect> AppCore::getValidEffectsForMode(SystemMode mode) const {
 
     switch (mode) {
         case SystemMode::AMBIENT:
-            // Ambient mode: Procedural Shapes, Wave Patterns, and Mandelbrot Root Veins
+            // Ambient mode: Procedural Shapes, Wave Patterns, Mandelbrot Root Veins
             valid_effects = {Effect::PROCEDURAL_SHAPES, Effect::WAVE_PATTERNS, Effect::MANDELBROT_ROOT_VEINS};
             break;
         case SystemMode::ACTIVE:

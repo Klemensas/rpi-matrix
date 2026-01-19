@@ -88,11 +88,18 @@ void MandelbrotRootVeinsEffect::growVeins(float dt) {
         
         seg.age += dt;
         
-        // Calculate growth direction with Mandelbrot influence
-        float dir = getMandelbrotDirection(seg.end.x, seg.end.y, seg.direction);
-        
+        // For initial growth from corners, use the base direction without Mandelbrot influence
+        // to ensure veins actually move toward center
+        float dir;
+        if (seg.age < 1.0f) {  // First second of growth
+            dir = seg.direction;  // Use original direction toward center
+        } else {
+            // After initial growth, add Mandelbrot influence
+            dir = getMandelbrotDirection(seg.end.x, seg.end.y, seg.direction);
+        }
+
         // Add slight time-based variation for organic movement
-        dir += 0.1f * sin(time_ * 0.5f + seg.phase);
+        dir += 0.05f * sin(time_ * 0.5f + seg.phase);  // Reduced variation
         
         // Grow the tip
         float growth = GROWTH_SPEED * dt * 30.0f;  // Scale for ~30fps
@@ -100,21 +107,25 @@ void MandelbrotRootVeinsEffect::growVeins(float dt) {
         new_end.x = seg.end.x + growth * cos(dir);
         new_end.y = seg.end.y + growth * sin(dir);
         
-        // Check bounds - if we've gone too far, stop this tip
-        float margin = 20.0f;
+        // Check bounds - allow growth well into the center
+        float margin = 50.0f;  // Increased margin to allow growth closer to center
         if (new_end.x < -margin || new_end.x > width_ + margin ||
             new_end.y < -margin || new_end.y > height_ + margin) {
             seg.is_tip = false;
             continue;
         }
         
-        // If segment has grown long enough, split into new segment
+        // Simple continuous growth - just extend the current segment
+        seg.end = new_end;
+        seg.direction = dir;
+
+        // If segment gets too long, start a new one (but keep growing)
         float seg_len = cv::norm(new_end - seg.start);
-        if (seg_len > 15.0f) {
+        if (seg_len > 50.0f && segments_.size() < MAX_SEGMENTS) {
             // Create new tip segment continuing from here
             VeinSegment new_seg;
             new_seg.start = seg.end;
-            new_seg.end = new_end;
+            new_seg.end = seg.end;  // Will start growing next frame
             new_seg.age = 0.0f;
             new_seg.generation = seg.generation;
             new_seg.is_wilting = false;
@@ -122,16 +133,8 @@ void MandelbrotRootVeinsEffect::growVeins(float dt) {
             new_seg.phase = static_cast<float>(rand()) / RAND_MAX * 2.0f * M_PI;
             new_seg.direction = dir;
             new_seg.is_tip = true;
-            
-            // Old segment is no longer a tip
-            seg.is_tip = false;
-            
-            if (segments_.size() < MAX_SEGMENTS) {
-                segments_.push_back(new_seg);
-            }
-        } else {
-            seg.end = new_end;
-            seg.direction = dir;
+
+            segments_.push_back(new_seg);
         }
     }
 }
@@ -275,17 +278,17 @@ cv::Point2f MandelbrotRootVeinsEffect::applyZoomRotation(const cv::Point2f& p) {
 }
 
 float MandelbrotRootVeinsEffect::getSegmentBrightness(const VeinSegment& seg) {
-    // Base brightness with low-frequency pulsation
-    float pulse = 0.7f + 0.3f * sin(time_ * 0.5f + seg.phase);
-    
+    // Base brightness - no pulsating
+    float brightness = 0.8f;
+
     // Fade based on generation (deeper branches are slightly dimmer)
     float gen_fade = 1.0f - seg.generation * 0.1f;
     gen_fade = std::max(0.4f, gen_fade);
-    
+
     // Apply wilting fade
     float wilt_fade = 1.0f - seg.wilt_progress;
-    
-    return pulse * gen_fade * wilt_fade;
+
+    return brightness * gen_fade * wilt_fade;
 }
 
 void MandelbrotRootVeinsEffect::renderVeins(cv::Mat& frame) {
@@ -316,8 +319,8 @@ void MandelbrotRootVeinsEffect::renderVeins(cv::Mat& frame) {
         
         cv::Scalar color(b, g, r);
         
-        // Line thickness based on generation (roots thicker)
-        int thickness = std::max(1, 3 - seg.generation);
+        // Thin lines for all segments to avoid rectangle appearance
+        int thickness = 1;
         
         cv::line(frame, p1, p2, color, thickness, cv::LINE_AA);
     }
@@ -342,53 +345,77 @@ void MandelbrotRootVeinsEffect::process(cv::Mat& out_bgr, int target_width, int 
     float dt = 1.0f / 30.0f;  // Assume ~30fps
     time_ += dt;
 
-    // Update zoom and rotation with safety checks
-    if (zoom_ > 0.0f) {
-        zoom_ *= (1.0f + ZOOM_RATE);
-    } else {
-        zoom_ = 1.0f;
-    }
-    rotation_ += ROTATION_RATE;
-
-    // Reset zoom periodically to prevent infinite zoom
-    if (zoom_ > 2.0f || zoom_ <= 0.0f) {
-        zoom_ = 1.0f;
-        rotation_ = 0.0f;
-        // Optionally reinitialize for fresh growth
-        if (segments_.size() > MAX_SEGMENTS / 2) {
-            reset();
-        }
-    }
-
-    // Grow veins
-    growVeins(dt);
-
-    // Check intersections periodically (expensive)
-    if (static_cast<int>(time_ * 30) % 5 == 0) {
-        checkIntersections();
-    }
-
-    // Update wilting
-    updateWilting(dt);
-
-    // Process at half resolution for performance
-    int proc_w = output_width / 2;
-    int proc_h = output_height / 2;
-    if (proc_w < 1) proc_w = 1;
-    if (proc_h < 1) proc_h = 1;
+    // Create expanding mandelbrot visualization from corners
+    // This creates a "veining" effect by revealing the fractal progressively
+    // Fractals "grow" by getting more iterations as they age
+    float expansion_radius = time_ * 100.0f;  // Expand 100 pixels per second
+    float expansion_speed = 100.0f;  // Pixels per second
+    float cx = width_ / 2.0f;
+    float cy = height_ / 2.0f;
 
     try {
-        proc_frame_ = cv::Mat::zeros(proc_h, proc_w, CV_8UC3);
+        out_bgr = cv::Mat::zeros(output_height, output_width, CV_8UC3);
 
-        // Render veins
-        renderVeins(proc_frame_);
+        // Calculate maximum possible corner distance (diagonal)
+        float max_corner_dist = sqrt(output_width * output_width + output_height * output_height);
 
-        // Apply glow effect via blur and additive blend
-        cv::GaussianBlur(proc_frame_, glow_frame_, cv::Size(7, 7), 2.0);
-        cv::addWeighted(proc_frame_, 1.0, glow_frame_, 0.6, 0, proc_frame_);
+        // Render mandelbrot set with expanding reveal from corners inward
+        for (int y = 0; y < output_height; y++) {
+            for (int x = 0; x < output_width; x++) {
+                // Distance to nearest corner
+                float dist_corner1 = sqrt(x * x + y * y);  // Top-left
+                float dist_corner2 = sqrt((output_width - x) * (output_width - x) + y * y);  // Top-right
+                float dist_corner3 = sqrt(x * x + (output_height - y) * (output_height - y));  // Bottom-left
+                float dist_corner4 = sqrt((output_width - x) * (output_width - x) + (output_height - y) * (output_height - y));  // Bottom-right
 
-        // Upscale to output resolution
-        cv::resize(proc_frame_, out_bgr, cv::Size(output_width, output_height), 0, 0, cv::INTER_LINEAR);
+                float min_corner_dist = std::min({dist_corner1, dist_corner2, dist_corner3, dist_corner4});
+
+                // Reveal pixels starting from corners and moving inward
+                // Pixels closer to corners get revealed first
+                if (min_corner_dist < expansion_radius) {
+                    // Calculate how long this pixel has been revealed (for growing effect)
+                    float time_revealed = time_ - (min_corner_dist / expansion_speed);
+                    time_revealed = std::max(0.0f, time_revealed);
+
+                    // Fractal "grows" by getting more iterations as pixel ages
+                    int max_iter_for_pixel = 5 + static_cast<int>(time_revealed * 10.0f);
+                    max_iter_for_pixel = std::min(max_iter_for_pixel, 50);  // Cap at 50 for performance
+
+                    // Compute mandelbrot iteration for this pixel
+                    double zx = 0.0, zy = 0.0;
+                    double cx_m = (x - output_width / 2.0) * 4.0 / output_width;
+                    double cy_m = (y - output_height / 2.0) * 4.0 / output_height;
+
+                    int iter = 0;
+                    while (zx * zx + zy * zy < 4.0 && iter < max_iter_for_pixel) {
+                        double temp = zx * zx - zy * zy + cx_m;
+                        zy = 2.0 * zx * zy + cy_m;
+                        zx = temp;
+                        iter++;
+                    }
+
+                    // Enhanced coloring for better vein-like appearance
+                    if (iter == max_iter_for_pixel) {
+                        // Inside set - very dark for contrast
+                        out_bgr.at<cv::Vec3b>(y, x) = cv::Vec3b(10, 10, 20);
+                    } else {
+                        // Outside set - vibrant colors for fractal detail
+                        float t = (float)iter / max_iter_for_pixel;
+                        // Use smooth color transitions that look organic
+                        int r = (int)(255 * (0.5 + 0.5 * sin(t * 6.28)));
+                        int g = (int)(255 * (0.5 + 0.5 * sin(t * 6.28 + 2.1)));
+                        int b = (int)(255 * (0.5 + 0.5 * sin(t * 6.28 + 4.2)));
+                        out_bgr.at<cv::Vec3b>(y, x) = cv::Vec3b(b, g, r);
+                    }
+                }
+            }
+        }
+
+        // Subtle glow to enhance fractal details
+        cv::Mat glow_frame;
+        cv::GaussianBlur(out_bgr, glow_frame, cv::Size(3, 3), 0.5);
+        cv::addWeighted(out_bgr, 0.9, glow_frame, 0.2, 0, out_bgr);
+
     } catch (const cv::Exception& e) {
         // If OpenCV operations fail, return a safe fallback
         std::cerr << "OpenCV error in mandelbrot effect: " << e.what() << std::endl;
