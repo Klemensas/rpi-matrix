@@ -61,13 +61,13 @@ private:
     cv::Mat glow_frame_;
     
     // Configuration
-    static constexpr int MAX_SEGMENTS = 300;
+    static constexpr int MAX_SEGMENTS = 800;         // More segments for denser veins
     static constexpr float GROWTH_SPEED = 3.0f;      // Pixels per frame at base
-    static constexpr float WILT_SPEED = 0.03f;       // Wilt progress per frame
+    static constexpr float WILT_SPEED = 0.02f;       // Wilt progress per frame
     static constexpr float ZOOM_RATE = 0.0002f;      // Zoom multiplier per frame
     static constexpr float ROTATION_RATE = 0.002f;   // Radians per frame
-    static constexpr float BRANCH_ANGLE_SPREAD = 0.6f; // Max random angle offset for branches
-    static constexpr int MAX_GENERATION = 5;         // Max branch depth
+    static constexpr float BRANCH_ANGLE_SPREAD = 0.45f; // Tighter angles for realistic veins
+    static constexpr int MAX_GENERATION = 8;         // More branch depth for fine detail
 };
 
 #endif // MANDELBROT_ROOT_VEINS_EFFECT_H
