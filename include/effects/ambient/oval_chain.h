@@ -50,6 +50,8 @@ private:
     void renderChain(cv::Mat& frame);
     void drawOvalLink(cv::Mat& frame, const OvalLink& link);
     void drawMetallicRing(cv::Mat& frame, const OvalLink& link);
+    void drawLinkHalf(cv::Mat& frame, const OvalLink& link, bool front_half);
+    void buildInterlockingChain();
     
     // Threading detection helpers
     bool isPointInEllipseHole(const cv::Point2f& point, const OvalLink& ring);
@@ -73,21 +75,21 @@ private:
     ChainDirection current_direction_;
 
     // Configuration - Motion
-    static constexpr float TRAVERSE_TIME = 1.0f;          // Seconds to cross screen
-    static constexpr float OSCILLATION_AMPLITUDE = 10.0f; // Oscillation pixels
+    static constexpr float TRAVERSE_TIME = 4.0f;          // Seconds to cross screen (slower for effect)
+    static constexpr float OSCILLATION_AMPLITUDE = 6.0f;  // Wave motion amplitude (pixels)
     static constexpr float OSCILLATION_FREQUENCY = 1.2f;  // Oscillations per traverse
     static constexpr float ROTATION_SPEED = 0.4f;         // Radians per second rotation
     
-    // Configuration - Trail
-    static constexpr float TRAIL_SPAWN_INTERVAL = 0.15f;  // Seconds between trail links (3x slower)
-    static constexpr float TRAIL_FADE_TIME = 1.8f;        // Seconds for trail to fully fade
-    static constexpr int MAX_TRAIL_LINKS = 25;            // Maximum trail length
+    // Configuration - Chain
+    static constexpr float TRAIL_SPAWN_INTERVAL = 0.15f;  // (unused in interlocking mode)
+    static constexpr float TRAIL_FADE_TIME = 1.8f;        // (unused in interlocking mode)
+    static constexpr int MAX_TRAIL_LINKS = 40;            // Maximum links in chain
     
-    // Configuration - Link appearance (more elongated chain-like)
-    static constexpr float LINK_OUTER_WIDTH = 38.0f;      // Outer ellipse width (elongated)
-    static constexpr float LINK_OUTER_HEIGHT = 14.0f;     // Outer ellipse height (thin)
-    static constexpr float HOLE_RATIO = 0.50f;            // Inner hole size (0.0-1.0)
-    static constexpr float RING_THICKNESS = 5.0f;         // Visual thickness of ring
+    // Configuration - Link appearance (realistic chain link proportions)
+    static constexpr float LINK_OUTER_WIDTH = 28.0f;      // Length of link (tip to tip)
+    static constexpr float LINK_OUTER_HEIGHT = 12.0f;     // Width of link
+    static constexpr float HOLE_RATIO = 0.55f;            // Inner hole size ratio
+    static constexpr float RING_THICKNESS = 4.0f;         // Wire diameter of the link
     
     // Configuration - Visual effects
     static constexpr float THREADING_BRIGHTNESS_BOOST = 0.4f;  // Extra brightness when threading
