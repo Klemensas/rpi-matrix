@@ -985,7 +985,11 @@ int AppCore::getRandomCycleInterval() {
 }
 
 void AppCore::toggleAutoCycling() {
-    auto_cycling_enabled_ = !auto_cycling_enabled_;
+    setAutoCycling(!auto_cycling_enabled_);
+}
+
+void AppCore::setAutoCycling(bool enabled) {
+    auto_cycling_enabled_ = enabled;
     if (auto_cycling_enabled_) {
         // Reset counters when re-enabling
         cycle_frame_counter_ = 0;

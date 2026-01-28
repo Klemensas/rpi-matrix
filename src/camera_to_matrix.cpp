@@ -18,6 +18,47 @@
 #include <vector>
 #include <functional>
 #include <cmath>
+#include <algorithm>
+#include <cctype>
+
+// Helper function to parse effect from string (name or number)
+// Returns -1 if invalid
+int parseEffect(const char* str) {
+    // Try parsing as a number first
+    char* end;
+    long num = std::strtol(str, &end, 10);
+    if (*end == '\0' && num >= 1 && num <= 11) {
+        return static_cast<int>(num);
+    }
+    
+    // Convert to lowercase for case-insensitive comparison
+    std::string name(str);
+    std::transform(name.begin(), name.end(), name.begin(), 
+                   [](unsigned char c) { return std::tolower(c); });
+    
+    // Replace underscores and hyphens with nothing for flexible matching
+    std::string normalized;
+    for (char c : name) {
+        if (c != '_' && c != '-') {
+            normalized += c;
+        }
+    }
+    
+    // Map effect names to numbers
+    if (normalized == "debug" || normalized == "passthrough" || normalized == "debugview") return 1;
+    if (normalized == "filled" || normalized == "filledsilhouette" || normalized == "silhouette") return 2;
+    if (normalized == "outline" || normalized == "outlineonly") return 3;
+    if (normalized == "motion" || normalized == "motiontrails" || normalized == "trails") return 4;
+    if (normalized == "rainbow" || normalized == "rainbowtrails" || normalized == "rainbowmotiontrails") return 5;
+    if (normalized == "double" || normalized == "doubleexposure" || normalized == "exposure") return 6;
+    if (normalized == "procedural" || normalized == "proceduralshapes" || normalized == "shapes") return 7;
+    if (normalized == "wave" || normalized == "wavepatterns" || normalized == "waves") return 8;
+    if (normalized == "geometric" || normalized == "geometricabstraction" || normalized == "abstraction") return 9;
+    if (normalized == "mandelbrot" || normalized == "mandelbrotveins" || normalized == "mandelbrotrootveins" || normalized == "veins") return 10;
+    if (normalized == "oval" || normalized == "ovalchain" || normalized == "chain") return 11;
+    
+    return -1;  // Invalid
+}
 
 using rgb_matrix::FrameCanvas;
 
@@ -88,7 +129,7 @@ public:
         std::cout << "  8 - Wave Patterns (→ Ambient)" << std::endl;
         std::cout << "  9 - Geometric Abstraction (→ Active)" << std::endl;
         std::cout << "  0 - Mandelbrot Root Veins (→ Ambient)" << std::endl;
-        std::cout << "  o - Oval Chain (→ Ambient)" << std::endl;
+         std::cout << "  o - Oval Chain (→ Ambient)" << std::endl;
         std::cout << "\nMulti-Panel Mode (independent of effects):" << std::endl;
         int num_panels = core_.getNumPanels();
         if (num_panels > 1) {
@@ -375,6 +416,21 @@ void printUsage(const char* program) {
               << "                                 e.g., --sensor-width 2304 --sensor-height 1296\n"
               << "  --sensor-height HEIGHT         Sensor capture height for FOV control (default: auto)\n"
               << "\n"
+              << "Effect options:\n"
+              << "  --effect EFFECT                Start with specified effect (disables auto-cycling)\n"
+              << "                                 Can be a number (1-11) or name:\n"
+              << "                                   1, debug        - Debug View (pass-through)\n"
+              << "                                   2, silhouette   - Filled Silhouette\n"
+              << "                                   3, outline      - Outline Only\n"
+              << "                                   4, trails       - Motion Trails\n"
+              << "                                   5, rainbow      - Rainbow Motion Trails\n"
+              << "                                   6, double       - Double Exposure\n"
+              << "                                   7, shapes       - Procedural Shapes (Ambient)\n"
+              << "                                   8, waves        - Wave Patterns (Ambient)\n"
+              << "                                   9, geometric    - Geometric Abstraction\n"
+              << "                                  10, mandelbrot   - Mandelbrot Root Veins (Ambient)\n"
+              << "                                  11, oval         - Oval Chain (Ambient)\n"
+              << "\n"
               << "Matrix configuration:\n"
               << "  --led-rows ROWS                Matrix rows per panel (default: 64)\n"
               << "  --led-cols COLS                Matrix columns per panel (default: 64)\n"
@@ -418,6 +474,7 @@ int main(int argc, char *argv[]) {
     int pwm_dither_bits = 0;
     int pwm_lsb_nanoseconds = 130;
     int limit_refresh_rate_hz = 0;
+    int initial_effect = -1;  // -1 = not specified (use auto-cycling)
 
     // Parse command line arguments
     for (int i = 1; i < argc; i++) {
@@ -454,6 +511,13 @@ int main(int argc, char *argv[]) {
             pwm_lsb_nanoseconds = std::atoi(argv[++i]);
         } else if (strcmp(argv[i], "--led-limit-refresh") == 0 && i + 1 < argc) {
             limit_refresh_rate_hz = std::atoi(argv[++i]);
+        } else if (strcmp(argv[i], "--effect") == 0 && i + 1 < argc) {
+            initial_effect = parseEffect(argv[++i]);
+            if (initial_effect == -1) {
+                std::cerr << "Invalid effect: " << argv[i] << std::endl;
+                std::cerr << "Use a number (1-11) or effect name (e.g., mandelbrot, waves, shapes)" << std::endl;
+                return 1;
+            }
         } else {
             std::cerr << "Unknown option: " << argv[i] << std::endl;
             printUsage(argv[0]);
@@ -488,6 +552,41 @@ int main(int argc, char *argv[]) {
                        hardware_mapping, brightness, gpio_slowdown,
                        pwm_bits, pwm_dither_bits, pwm_lsb_nanoseconds, 
                        limit_refresh_rate_hz, sensor_width, sensor_height);
+    
+    // If an initial effect was specified via command line, set it and disable auto-cycling
+    if (initial_effect > 0) {
+        Effect effect = static_cast<Effect>(initial_effect);
+        AppCore& core = app.getCore();
+        
+        // Set the effect
+        core.setEffect(effect);
+        
+        // Set the appropriate system mode for this effect
+        SystemMode appropriate_mode = core.getAppropriateModeForEffect(effect);
+        core.setSystemMode(appropriate_mode);
+        
+        // Disable auto-cycling when starting with a specific effect
+        core.setAutoCycling(false);
+        
+        const char* effect_names[] = {
+            "Debug View",
+            "Filled Silhouette",
+            "Outline Only",
+            "Motion Trails",
+            "Rainbow Motion Trails",
+            "Double Exposure",
+            "Procedural Shapes",
+            "Wave Patterns",
+            "Geometric Abstraction",
+            "Mandelbrot Root Veins",
+            "Oval Chain"
+        };
+        const char* mode_names[] = {"Ambient", "Active"};
+        
+        std::cout << "Starting with effect: " << initial_effect << " (" << effect_names[initial_effect - 1] << ")" << std::endl;
+        std::cout << "System mode: " << mode_names[static_cast<int>(appropriate_mode)] << std::endl;
+        std::cout << "Auto-cycling: disabled" << std::endl;
+    }
     
     app.run();
 

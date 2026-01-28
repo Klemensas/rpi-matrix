@@ -74,6 +74,7 @@ public:
     
     // Auto-cycling controls
     void toggleAutoCycling();
+    void setAutoCycling(bool enabled);
     bool isAutoCycling() const { return auto_cycling_enabled_; }
 
     // Process an input frame into an output frame.
