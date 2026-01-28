@@ -12,6 +12,7 @@
 #include "effects/ambient/procedural_shapes.h"
 #include "effects/ambient/wave_patterns.h"
 #include "effects/ambient/mandelbrot_root_veins.h"
+#include "effects/ambient/oval_chain.h"
 
 // System modes
 enum class SystemMode {
@@ -30,7 +31,8 @@ enum class Effect {
     PROCEDURAL_SHAPES = 7,
     WAVE_PATTERNS = 8,
     GEOMETRIC_ABSTRACTION = 9,
-    MANDELBROT_ROOT_VEINS = 10
+    MANDELBROT_ROOT_VEINS = 10,
+    OVAL_CHAIN = 11
 };
 
 // Panel layout modes for multi-panel display
@@ -181,6 +183,7 @@ private:
     std::unique_ptr<ProceduralShapesEffect> procedural_shapes_effect_;
     std::unique_ptr<WavePatternsEffect> wave_patterns_effect_;
     std::unique_ptr<MandelbrotRootVeinsEffect> mandelbrot_root_veins_effect_;
+    std::unique_ptr<OvalChainEffect> oval_chain_effect_;
 };
 
 #endif // APP_CORE_H

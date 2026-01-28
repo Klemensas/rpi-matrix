@@ -88,6 +88,7 @@ public:
         std::cout << "  8 - Wave Patterns (→ Ambient)" << std::endl;
         std::cout << "  9 - Geometric Abstraction (→ Active)" << std::endl;
         std::cout << "  0 - Mandelbrot Root Veins (→ Ambient)" << std::endl;
+        std::cout << "  o - Oval Chain (→ Ambient)" << std::endl;
         std::cout << "\nMulti-Panel Mode (independent of effects):" << std::endl;
         int num_panels = core_.getNumPanels();
         if (num_panels > 1) {
@@ -106,7 +107,7 @@ public:
         if (num_panels > 1) {
             std::cout << "  q - Toggle panel layout mode (extend <-> repeat)" << std::endl;
         }
-        std::cout << "Press 0-9, m, a, §, d" << (num_panels > 1 ? ", q" : "") << "; Ctrl+C to stop" << std::endl;
+        std::cout << "Press 0-9, o, m, a, §, d" << (num_panels > 1 ? ", q" : "") << "; Ctrl+C to stop" << std::endl;
 
         // Keep running until interrupted
         while (running) {
@@ -267,7 +268,8 @@ private:
                                 "Procedural Shapes",
                                 "Wave Patterns",
                                 "Geometric Abstraction",
-                                "Mandelbrot Root Veins"  // Add mandelbrot to the effect names array
+                                "Mandelbrot Root Veins",
+                                "Oval Chain"
                             };
 
                             const char* mode_names[] = {"Ambient", "Active"};
@@ -337,6 +339,11 @@ private:
                         if (enabled) {
                             std::cout << "  (Modes will automatically cycle every 3-7 seconds)" << std::endl;
                         }
+                    } else if (key == 'o' || key == 'O') {
+                        // Switch to Oval Chain effect
+                        core_.setSystemMode(SystemMode::AMBIENT);
+                        core_.setEffect(Effect::OVAL_CHAIN);
+                        std::cout << "Switched to Oval Chain effect (Ambient mode)" << std::endl;
                     }
                 }
             }

@@ -25,6 +25,7 @@ set(COMMON_SOURCES
     src/effects/ambient/procedural_shapes.cpp
     src/effects/ambient/wave_patterns.cpp
     src/effects/ambient/mandelbrot_root_veins.cpp
+    src/effects/ambient/oval_chain.cpp
 )
 
 if(BUILD_RPI)

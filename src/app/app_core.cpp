@@ -26,6 +26,7 @@ AppCore::AppCore(int width, int height, int num_panels)
     procedural_shapes_effect_ = std::make_unique<ProceduralShapesEffect>(width_, height_);
     wave_patterns_effect_ = std::make_unique<WavePatternsEffect>(width_, height_);
     mandelbrot_root_veins_effect_ = std::make_unique<MandelbrotRootVeinsEffect>(width_, height_);
+    oval_chain_effect_ = std::make_unique<OvalChainEffect>(width_, height_);
 }
 
 void AppCore::setSystemMode(SystemMode mode) {
@@ -141,6 +142,7 @@ SystemMode AppCore::getAppropriateModeForEffect(Effect effect) const {
         case Effect::PROCEDURAL_SHAPES:
         case Effect::WAVE_PATTERNS:
         case Effect::MANDELBROT_ROOT_VEINS:
+        case Effect::OVAL_CHAIN:
             return SystemMode::AMBIENT;
         case Effect::DEBUG:
             // Debug effect doesn't change mode - keep current mode
@@ -192,6 +194,11 @@ void AppCore::processEffect(Effect effect, const cv::Mat& in_bgr, cv::Mat& out_b
         case Effect::MANDELBROT_ROOT_VEINS:
             if (mandelbrot_root_veins_effect_) {
                 mandelbrot_root_veins_effect_->process(out_bgr, width_, height_);
+            }
+            break;
+        case Effect::OVAL_CHAIN:
+            if (oval_chain_effect_) {
+                oval_chain_effect_->process(out_bgr, width_, height_);
             }
             break;
         case Effect::GEOMETRIC_ABSTRACTION:
@@ -951,8 +958,8 @@ std::vector<Effect> AppCore::getValidEffectsForMode(SystemMode mode) const {
 
     switch (mode) {
         case SystemMode::AMBIENT:
-            // Ambient mode: Procedural Shapes, Wave Patterns, Mandelbrot Root Veins
-            valid_effects = {Effect::PROCEDURAL_SHAPES, Effect::WAVE_PATTERNS, Effect::MANDELBROT_ROOT_VEINS};
+            // Ambient mode: Procedural Shapes, Wave Patterns, Mandelbrot Root Veins, Oval Chain
+            valid_effects = {Effect::PROCEDURAL_SHAPES, Effect::WAVE_PATTERNS, Effect::MANDELBROT_ROOT_VEINS, Effect::OVAL_CHAIN};
             break;
         case SystemMode::ACTIVE:
             // Active mode: All effects except DEBUG, PROCEDURAL_SHAPES, and WAVE_PATTERNS
